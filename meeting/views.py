@@ -33,7 +33,7 @@ class ScheduleMeetingView(APIView):
             "{\n"
             '  "status": "success",\n'
             '  "event_id": "abc123xyz...",\n'
-            '  "html_link": "https://calendar.google.com/calendar/event?eid=...",\n'
+            '  "calendar_link": "https://calendar.google.com/calendar/event?eid=...",\n'
             '  "meet_link": "https://meet.google.com/abc-defg-hij",\n'
             '  "title": "Project Sync",\n'
             '  "start_datetime": "2026-04-01T10:00:00+00:00",\n'
@@ -79,7 +79,7 @@ class ScheduleMeetingView(APIView):
             {
                 "status": "success",
                 "event_id": result.get("event_id"),
-                "html_link": result.get("html_link"),
+                "calendar_link": result.get("html_link"),
                 "meet_link": result.get("meet_link"),
                 "title": title,
                 "start_datetime": start_dt.isoformat(),

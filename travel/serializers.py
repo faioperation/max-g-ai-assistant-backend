@@ -36,10 +36,10 @@ class FlightSearchSerializer(serializers.Serializer):
     )
     max_results = serializers.IntegerField(
         required=False,
-        default=15,
+        default=50,
         min_value=1,
         max_value=50,
-        help_text="Maximum number of offers to return (default: 15)"
+        help_text="Maximum number of offers to return (default: 50)"
     )
 
 

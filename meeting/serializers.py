@@ -33,7 +33,7 @@ class ScheduleMeetingSerializer(serializers.Serializer):
 class MeetingResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     event_id = serializers.CharField()
-    html_link = serializers.URLField()
+    calendar_link = serializers.URLField()
     meet_link = serializers.URLField(allow_null=True)
     title = serializers.CharField()
     start_datetime = serializers.DateTimeField()

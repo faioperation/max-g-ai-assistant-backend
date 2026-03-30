@@ -1,5 +1,6 @@
 from django.http import HttpResponse
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
@@ -17,6 +18,10 @@ import requests
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class PlainTextJSONParser(JSONParser):
+    media_type = "text/plain"
 
 
 # ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -129,6 +134,7 @@ class ReplyDirectView(APIView):
     """
 
     permission_classes = []
+    parser_classes = [JSONParser, PlainTextJSONParser, FormParser, MultiPartParser]
 
     @swagger_auto_schema(
         operation_summary="Send reply to a WhatsApp user",
@@ -143,8 +149,7 @@ class ReplyDirectView(APIView):
             '  "to": "8801641697469",\n'
             '  "message_type": "text",\n'
             '  "body": "Here are your flight details!",\n'
-            '  "media_url": null,\n'
-            '  "caption": ""\n'
+            '  "media_url": null\n'
             "}\n"
             "```\n\n"
             "### Example Response Payload\n"
@@ -204,6 +209,7 @@ class ReplyMaxView(APIView):
     """
 
     permission_classes = []
+    parser_classes = [JSONParser, PlainTextJSONParser, FormParser, MultiPartParser]
 
     @swagger_auto_schema(
         operation_summary="Send notification to Max (admin)",
@@ -219,8 +225,7 @@ class ReplyMaxView(APIView):
             "{\n"
             '  "message_type": "text",\n'
             '  "body": "Alert: The user needs human assistance!",\n'
-            '  "media_url": null,\n'
-            '  "caption": ""\n'
+            '  "media_url": null\n'
             "}\n"
             "```\n\n"
             "### Example Response Payload\n"

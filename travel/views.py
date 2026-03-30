@@ -45,8 +45,7 @@ class FlightSearchView(APIView):
             "  ],\n"
             '  "passengers": [\n'
             '    { "type": "adult" }\n'
-            "  ],\n"
-            '  "max_results": 10\n'
+            "  ]\n"
             "}\n"
             "```\n\n"
             "### Example Response Payload\n"

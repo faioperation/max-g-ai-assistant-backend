@@ -163,4 +163,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 ALLOWED_HOSTS = [
     "test22.fireai.agency",
+    "172.252.13.90",
+    "127.0.0.1",
+    ".ngrok-free.dev",
 ]
