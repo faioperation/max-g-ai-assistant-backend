@@ -2,6 +2,8 @@
 .env
 .venv
 
+api/__pycache__
+
 travel/__pycache__
 travel/services/__pycache__
 

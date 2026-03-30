@@ -5,8 +5,9 @@ from rest_framework import status
 from django.conf import settings
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .serializers import ScheduleMeetingSerializer, MeetingResponseSerializer
-from .services.calendar_api import CalendarService
+from meeting.serializers import ScheduleMeetingSerializer, MeetingResponseSerializer
+from meeting.services.calendar_api import CalendarService
+
 
 class ScheduleMeetingView(APIView):
     permission_classes = []
@@ -16,12 +17,27 @@ class ScheduleMeetingView(APIView):
         operation_description=(
             "Creates a Google Calendar event with a Google Meet link.\n\n"
             "If `attendee_email` is provided, an invite email will automatically be sent to that address.\n\n"
-            "**Example request:**\n"
+            "### Example Request Payload\n"
             "```json\n"
             "{\n"
             '  "title": "Project Sync",\n'
             '  "start_datetime": "2026-04-01T10:00:00Z",\n'
+            '  "end_datetime": "2026-04-01T10:30:00Z",\n'
+            '  "description": "Q2 Planning and sync",\n'
+            '  "location": "Google Meet",\n'
             '  "attendee_email": "user@example.com"\n'
+            "}\n"
+            "```\n\n"
+            "### Example Response Payload\n"
+            "```json\n"
+            "{\n"
+            '  "status": "success",\n'
+            '  "event_id": "abc123xyz...",\n'
+            '  "html_link": "https://calendar.google.com/calendar/event?eid=...",\n'
+            '  "meet_link": "https://meet.google.com/abc-defg-hij",\n'
+            '  "title": "Project Sync",\n'
+            '  "start_datetime": "2026-04-01T10:00:00+00:00",\n'
+            '  "end_datetime": "2026-04-01T10:30:00+00:00"\n'
             "}\n"
             "```"
         ),

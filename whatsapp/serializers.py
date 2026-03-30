@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import WhatsAppContact, WhatsAppMessage, PendingBooking
+from whatsapp.models import WhatsAppContact, WhatsAppMessage, PendingBooking
 
 
 class WhatsAppMessageSerializer(serializers.ModelSerializer):
@@ -13,7 +13,15 @@ class WhatsAppContactSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WhatsAppContact
-        fields = ["id", "phone_number", "profile_name", "profile_pic_url", "last_interaction", "created_at", "last_message"]
+        fields = [
+            "id",
+            "phone_number",
+            "profile_name",
+            "profile_pic_url",
+            "last_interaction",
+            "created_at",
+            "last_message",
+        ]
 
     def get_last_message(self, obj):
         last_msg = obj.messages.first()
@@ -31,50 +39,50 @@ class PendingBookingSerializer(serializers.ModelSerializer):
 class ReplyDirectSerializer(serializers.Serializer):
     to = serializers.CharField(
         max_length=20,
-        help_text="Recipient WhatsApp number in E.164 format (e.g. 8801641697469)"
+        help_text="Recipient WhatsApp number in E.164 format (e.g. 8801641697469)",
     )
     message_type = serializers.ChoiceField(
         choices=["text", "image", "video", "audio", "document"],
-        help_text="Type of message to send"
+        help_text="Type of message to send",
     )
     body = serializers.CharField(
         required=False,
         allow_blank=True,
         default="",
-        help_text="Text body (required for message_type=text)"
+        help_text="Text body (required for message_type=text)",
     )
     media_url = serializers.URLField(
         required=False,
         allow_null=True,
-        help_text="Publicly accessible URL for media messages"
+        help_text="Publicly accessible URL for media messages",
     )
     caption = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Optional caption for media messages"
+        help_text="Optional caption for media messages",
     )
 
 
 class ReplyMaxSerializer(serializers.Serializer):
     message_type = serializers.ChoiceField(
         choices=["text", "image", "video", "audio", "document"],
-        help_text="Type of message to send to the admin (Max)"
+        help_text="Type of message to send to the admin (Max)",
     )
     body = serializers.CharField(
         required=False,
         allow_blank=True,
         default="",
-        help_text="Text body (required for message_type=text)"
+        help_text="Text body (required for message_type=text)",
     )
     media_url = serializers.URLField(
         required=False,
         allow_null=True,
-        help_text="Publicly accessible URL for media messages"
+        help_text="Publicly accessible URL for media messages",
     )
     caption = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Optional caption for media messages"
+        help_text="Optional caption for media messages",
     )
 
 

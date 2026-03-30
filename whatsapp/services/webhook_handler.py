@@ -1,7 +1,7 @@
 import logging
-from .meta_api import MetaAPI
-from .bot_api import BotAPI
-from ..models import WhatsAppContact, WhatsAppMessage
+from whatsapp.services.meta_api import MetaAPI
+from whatsapp.services.bot_api import BotAPI
+from whatsapp.models import WhatsAppContact, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,9 @@ class WebhookHandler:
             msg_type = msg.get("type", "text")
 
             # 1. Get or create contact
-            profile_name = contacts[0].get("profile", {}).get("name") if contacts else None
+            profile_name = (
+                contacts[0].get("profile", {}).get("name") if contacts else None
+            )
             contact, _ = WhatsAppContact.objects.get_or_create(
                 phone_number=from_number,
                 defaults={"profile_name": profile_name},
@@ -62,6 +64,7 @@ class WebhookHandler:
                 # Build proxy URL so media is accessible without Meta token
                 if media_id and request:
                     from django.urls import reverse
+
                     path = reverse("media-proxy", args=[media_id])
                     proxy_url = request.build_absolute_uri(path)
 

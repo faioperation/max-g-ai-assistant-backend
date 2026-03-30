@@ -66,6 +66,22 @@ class BookingPassengerSerializer(serializers.Serializer):
     phone_number = serializers.CharField(
         help_text="Phone number in E.164 format (e.g. +8801641697469)"
     )
+    passport_number = serializers.CharField(
+        required=False, 
+        allow_blank=True, 
+        help_text="Passport number (required for international flights)"
+    )
+    passport_expiry_date = serializers.DateField(
+        required=False, 
+        allow_null=True, 
+        help_text="Passport expiry date in YYYY-MM-DD format"
+    )
+    passport_issuing_country = serializers.CharField(
+        required=False, 
+        allow_blank=True, 
+        max_length=2, 
+        help_text="2-letter country code (e.g. BD, US)"
+    )
 
 
 class FlightBookSerializer(serializers.Serializer):

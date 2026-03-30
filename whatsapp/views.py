@@ -2,18 +2,16 @@ from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.conf import settings
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .services.webhook_handler import WebhookHandler
-from .services.meta_api import MetaAPI
-from .models import WhatsAppContact, WhatsAppMessage
-from .serializers import (
+from whatsapp.services.webhook_handler import WebhookHandler
+from whatsapp.services.meta_api import MetaAPI
+from whatsapp.models import WhatsAppContact, WhatsAppMessage
+from whatsapp.serializers import (
     ReplyDirectSerializer,
     ReplyMaxSerializer,
     ReplyResponseSerializer,
-    WhatsAppMessageSerializer,
 )
 import requests
 import logging
@@ -22,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Shared helpers ──────────────────────────────────────────────────────────
+
 
 def _do_send(meta_api, to, serializer_data):
     """Send a message via Meta API and return (meta_response, error_response)."""
@@ -50,6 +49,7 @@ def _do_send(meta_api, to, serializer_data):
 
 # ─── Webhook ──────────────────────────────────────────────────────────────────
 
+
 class WhatsAppWebhookView(APIView):
     permission_classes = []
 
@@ -62,12 +62,29 @@ class WhatsAppWebhookView(APIView):
         ),
         tags=["WhatsApp Webhook"],
         manual_parameters=[
-            openapi.Parameter("hub.mode", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Should be 'subscribe'"),
-            openapi.Parameter("hub.verify_token", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Your META_VERIFY_TOKEN from .env"),
-            openapi.Parameter("hub.challenge", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Random challenge string from Meta"),
+            openapi.Parameter(
+                "hub.mode",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description="Should be 'subscribe'",
+            ),
+            openapi.Parameter(
+                "hub.verify_token",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description="Your META_VERIFY_TOKEN from .env",
+            ),
+            openapi.Parameter(
+                "hub.challenge",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description="Random challenge string from Meta",
+            ),
         ],
         responses={
-            200: openapi.Response("Verification successful — returns hub.challenge value"),
+            200: openapi.Response(
+                "Verification successful — returns hub.challenge value"
+            ),
             403: openapi.Response("Invalid verify token"),
         },
     )
@@ -104,11 +121,13 @@ class WhatsAppWebhookView(APIView):
 
 # ─── Reply endpoints (called by the AI Bot) ───────────────────────────────────
 
+
 class ReplyDirectView(APIView):
     """
     Send a WhatsApp message directly to a specific user.
     Called by the AI bot when it wants to reply to the original sender.
     """
+
     permission_classes = []
 
     @swagger_auto_schema(
@@ -117,7 +136,26 @@ class ReplyDirectView(APIView):
             "Called by the AI agent to send a message directly to a WhatsApp user.\n\n"
             "**Message types:**\n"
             "- `text` — requires `body`\n"
-            "- `image / video / audio / document` — requires `media_url` (publicly accessible)"
+            "- `image / video / audio / document` — requires `media_url` (publicly accessible)\n\n"
+            "### Example Request Payload\n"
+            "```json\n"
+            "{\n"
+            '  "to": "8801641697469",\n'
+            '  "message_type": "text",\n'
+            '  "body": "Here are your flight details!",\n'
+            '  "media_url": null,\n'
+            '  "caption": ""\n'
+            "}\n"
+            "```\n\n"
+            "### Example Response Payload\n"
+            "```json\n"
+            "{\n"
+            '  "status": "success",\n'
+            '  "message": "Direct message sent to 8801641697469",\n'
+            '  "wa_message_id": "wamid.HBg...",\n'
+            '  "meta_response": { ... }\n'
+            "}\n"
+            "```"
         ),
         tags=["WhatsApp Reply"],
         request_body=ReplyDirectSerializer,
@@ -164,6 +202,7 @@ class ReplyMaxView(APIView):
     Send a WhatsApp message to the admin number (Max).
     Called by the AI bot when it needs to notify the admin instead of (or in addition to) the user.
     """
+
     permission_classes = []
 
     @swagger_auto_schema(
@@ -174,7 +213,25 @@ class ReplyMaxView(APIView):
             "**No `to` field needed** — the recipient is always the admin number.\n\n"
             "**Message types:**\n"
             "- `text` — requires `body`\n"
-            "- `image / video / audio / document` — requires `media_url`"
+            "- `image / video / audio / document` — requires `media_url` (publicly accessible)\n\n"
+            "### Example Request Payload\n"
+            "```json\n"
+            "{\n"
+            '  "message_type": "text",\n'
+            '  "body": "Alert: The user needs human assistance!",\n'
+            '  "media_url": null,\n'
+            '  "caption": ""\n'
+            "}\n"
+            "```\n\n"
+            "### Example Response Payload\n"
+            "```json\n"
+            "{\n"
+            '  "status": "success",\n'
+            '  "message": "Message sent to admin",\n'
+            '  "wa_message_id": "wamid.HBg...",\n'
+            '  "meta_response": { ... }\n'
+            "}\n"
+            "```"
         ),
         tags=["WhatsApp Reply"],
         request_body=ReplyMaxSerializer,
@@ -205,7 +262,9 @@ class ReplyMaxView(APIView):
         wa_message_id = None
         if "messages" in meta_response:
             wa_message_id = meta_response["messages"][0].get("id")
-            contact, _ = WhatsAppContact.objects.get_or_create(phone_number=admin_number)
+            contact, _ = WhatsAppContact.objects.get_or_create(
+                phone_number=admin_number
+            )
             WhatsAppMessage.objects.create(
                 contact=contact,
                 direction="out",
@@ -225,6 +284,7 @@ class ReplyMaxView(APIView):
 
 # ─── Media Proxy ──────────────────────────────────────────────────────────────
 
+
 class MediaProxyView(APIView):
     permission_classes = []
 
@@ -238,7 +298,8 @@ class MediaProxyView(APIView):
         tags=["WhatsApp Media"],
         manual_parameters=[
             openapi.Parameter(
-                "media_id", openapi.IN_PATH,
+                "media_id",
+                openapi.IN_PATH,
                 type=openapi.TYPE_STRING,
                 description="Meta media ID (e.g. 1262574552048176)",
             )
@@ -254,7 +315,9 @@ class MediaProxyView(APIView):
         media_info = meta_api.get_media_url(media_id)
         url = media_info.get("url")
         if not url:
-            return Response({"error": "Media not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Media not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         headers = {"Authorization": f"Bearer {settings.META_ACCESS_TOKEN}"}
         response = requests.get(url, headers=headers, stream=True)

@@ -66,7 +66,23 @@ class SendManualMessageView(APIView):
             "- **Text**: set `message_type=text` and provide `body`\n"
             "- **Media via URL**: set `message_type` and `media_url` (publicly accessible link)\n"
             "- **File upload**: set `message_type` and attach `file` (uploaded to Meta first)\n\n"
-            "The sent message is saved to the database automatically."
+            "The sent message is saved to the database automatically.\n\n"
+            "### Example Request Payload\n"
+            "```json\n"
+            "{\n"
+            '  "phone_number": "8801641697469",\n'
+            '  "message_type": "text",\n'
+            '  "body": "Hello from the dashboard admin!"\n'
+            "}\n"
+            "```\n\n"
+            "### Example Response Payload\n"
+            "```json\n"
+            "{\n"
+            '  "messaging_product": "whatsapp",\n'
+            '  "contacts": [{ "input": "8801641697469", "wa_id": "8801641697469" }],\n'
+            '  "messages": [{ "id": "wamid.HBg..." }]\n'
+            "}\n"
+            "```"
         ),
         tags=["Dashboard"],
         request_body=SendMessageSerializer,
