@@ -112,25 +112,93 @@ class FlightSearchView(APIView):
             offers_raw = offers_res.json().get("data", [])
 
             offers = []
+            seen_flight_signatures = set()
+
             for raw in offers_raw:
+                # 1. Create a unique signature to prevent duplicate flights (same plane, different fare)
+                signature_parts = []
+                for s in raw.get("slices", []):
+                    for seg in s.get("segments", []):
+                        carrier = seg.get("operating_carrier", {}).get("iata_code", "")
+                        dep = seg.get("departing_at", "")
+                        arr = seg.get("arriving_at", "")
+                        signature_parts.append(f"{carrier}-{dep}-{arr}")
+                
+                signature = "|".join(signature_parts)
+                if signature in seen_flight_signatures:
+                    continue  # We already have this exact flight (likely a cheaper fare class)
+                seen_flight_signatures.add(signature)
+
+                # 2. Extract exactly the formatted data requested
+                formatted_slices = []
+                for s in raw.get("slices", []):
+                    formatted_segments = []
+                    for seg in s.get("segments", []):
+                        ac = seg.get("aircraft", {}) or {}
+                        oc = seg.get("operating_carrier", {}) or {}
+                        
+                        formatted_segments.append({
+                            "aircraft": {
+                                "iata_code": ac.get("iata_code"),
+                                "name": ac.get("name"),
+                                "id": ac.get("id"),
+                            },
+                            "departing_at": seg.get("departing_at"),
+                            "arriving_at": seg.get("arriving_at"),
+                            "operating_carrier": {
+                                "iata_code": oc.get("iata_code"),
+                                "name": oc.get("name"),
+                                "id": oc.get("id"),
+                            },
+                        })
+                    
+                    o = s.get("origin", {}) or {}
+                    d = s.get("destination", {}) or {}
+
+                    formatted_slices.append({
+                        "fare_brand_name": s.get("fare_brand_name"),
+                        "segments": formatted_segments,
+                        "destination": {
+                            "iata_city_code": d.get("iata_city_code"),
+                            "city_name": d.get("city_name"),
+                            "time_zone": d.get("time_zone"),
+                            "type": d.get("type"),
+                            "name": d.get("name"),
+                            "id": d.get("id"),
+                        },
+                        "origin": {
+                            "iata_city_code": o.get("iata_city_code"),
+                            "city_name": o.get("city_name"),
+                            "time_zone": o.get("time_zone"),
+                            "type": o.get("type"),
+                            "name": o.get("name"),
+                            "id": o.get("id"),
+                        },
+                        "id": s.get("id"),
+                    })
+
+                own = raw.get("owner", {}) or {}
                 offers.append({
                     "offer_id": raw.get("id"),
                     "total_amount": raw.get("total_amount"),
                     "total_currency": raw.get("total_currency"),
-                    "base_amount": raw.get("base_amount"),
-                    "tax_amount": raw.get("tax_amount"),
                     "expires_at": raw.get("expires_at"),
-                    "slices": raw.get("slices", []),
-                    "passengers": raw.get("passengers", []),
-                    "owner": raw.get("owner", {}),  
+                    "slices": formatted_slices,
+                    "owner": {
+                        "iata_code": own.get("iata_code"),
+                        "name": own.get("name"),
+                        "id": own.get("id"),
+                    },
                 })
 
             return Response(
-                {
-                    "offer_request_id": offer_request_id,
-                    "offers_count": len(offers),
-                    "offers": offers,
-                },
+                [
+                    {
+                        "offer_request_id": offer_request_id,
+                        "offers_count": len(offers),
+                        "offers": offers,
+                    }
+                ],
                 status=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -178,10 +246,28 @@ class FlightBookView(APIView):
 
         try:
             offer_id = serializer.validated_data["offer_id"]
-            passengers = serializer.validated_data["passengers"]
+            passengers_input = serializer.validated_data["passengers"]
             payment_type = serializer.validated_data.get("payment_type", "balance")
 
-            for p in passengers:
+            # 1. Fetch the actual offer to get EXACT total_amount and passenger IDs
+            offer_res = requests.get(f"{DUFFEL_API_URL}/offers/{offer_id}", headers=headers)
+            if offer_res.status_code >= 400:
+                err_data = offer_res.json()
+                msg = err_data.get("errors", [{"message": "Invalid or expired offer_id"}])[0].get("message")
+                return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+            offer_data = offer_res.json().get("data", {})
+            total_amount = offer_data.get("total_amount")
+            total_currency = offer_data.get("total_currency")
+            offer_passengers = offer_data.get("passengers", [])
+
+            # 2. Map passenger IDs to the user's passenger input
+            # If the user omitted id, we grab the matching passenger from the offer
+            for idx, p in enumerate(passengers_input):
+                if not p.get("id") and idx < len(offer_passengers):
+                    p["id"] = offer_passengers[idx].get("id")
+                
+                # Convert dates
                 if isinstance(p.get("born_on"), datetime.date):
                     p["born_on"] = p["born_on"].isoformat()
 
@@ -189,11 +275,18 @@ class FlightBookView(APIView):
                 "data": {
                     "type": "instant",
                     "selected_offers": [offer_id],
-                    "passengers": passengers,
-                    "payments": [{"type": payment_type, "currency": "USD", "amount": "0.00"}]
+                    "passengers": passengers_input,
+                    "payments": [
+                        {
+                            "type": payment_type, 
+                            "currency": total_currency, 
+                            "amount": total_amount
+                        }
+                    ]
                 }
             }
 
+            # 3. Execute the order
             res = requests.post(f"{DUFFEL_API_URL}/orders", headers=headers, json=payload)
             
             if res.status_code >= 400:

@@ -45,7 +45,9 @@ class FlightSearchSerializer(serializers.Serializer):
 
 class BookingPassengerSerializer(serializers.Serializer):
     id = serializers.CharField(
-        help_text="Passenger ID from the offer (e.g. pas_0000Aqn05etwE3zG9RXZwM)"
+        required=False,
+        allow_null=True,
+        help_text="Optional: Passenger ID from the offer. If omitted, backend will auto-map it."
     )
     title = serializers.ChoiceField(
         choices=["mr", "mrs", "ms", "miss", "dr"],
