@@ -1,38 +1,40 @@
 from django.http import HttpResponse
-from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework import status
-from django.conf import settings
-from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from whatsapp.services.webhook_handler import WebhookHandler
+from drf_yasg.utils import swagger_auto_schema
+from django.conf import settings
+from rest_framework.views import APIView
 from whatsapp.services.meta_api import MetaAPI
+from whatsapp.services.webhook_handler import WebhookHandler
 from whatsapp.models import WhatsAppContact, WhatsAppMessage
 from whatsapp.serializers import (
     ReplyDirectSerializer,
     ReplyMaxSerializer,
     ReplyResponseSerializer,
 )
-import requests
+
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
 
 class PlainTextJSONParser(JSONParser):
+    """Accepts application/json bodies sent with text/plain Content-Type (VPS bots)."""
+
     media_type = "text/plain"
 
 
-# ─── Shared helpers ──────────────────────────────────────────────────────────
+BOT_PARSERS = [JSONParser, PlainTextJSONParser, FormParser, MultiPartParser]
 
 
-def _do_send(meta_api, to, serializer_data):
-    """Send a message via Meta API and return (meta_response, error_response)."""
-    msg_type = serializer_data["message_type"]
-    body = serializer_data.get("body", "")
-    media_url = serializer_data.get("media_url")
-    caption = serializer_data.get("caption", "")
+def _do_send(meta_api, to, data):
+    """Dispatch a WhatsApp message via Meta API. Returns (meta_response, error_response)."""
+    msg_type = data["message_type"]
+    body = data.get("body", "")
+    media_url = data.get("media_url")
 
     if msg_type == "text":
         if not body:
@@ -40,16 +42,28 @@ def _do_send(meta_api, to, serializer_data):
                 {"error": "body is required for message_type=text"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        meta_response = meta_api.send_text_message(to, body)
+        return meta_api.send_text_message(to, body), None
     else:
         if not media_url:
             return None, Response(
                 {"error": f"media_url is required for message_type={msg_type}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        meta_response = meta_api.send_media_message(to, msg_type, media_url=media_url)
+        return meta_api.send_media_message(to, msg_type, media_url=media_url), None
 
-    return meta_response, None
+
+def _save_outgoing(contact_phone, data, wa_message_id):
+    """Persist an outgoing message to the DB."""
+    contact, _ = WhatsAppContact.objects.get_or_create(phone_number=contact_phone)
+    WhatsAppMessage.objects.create(
+        contact=contact,
+        direction="out",
+        message_type=data["message_type"],
+        body=data.get("body", ""),
+        media_url=data.get("media_url"),
+        wa_message_id=wa_message_id,
+        status="sent",
+    )
 
 
 # ─── Webhook ──────────────────────────────────────────────────────────────────
@@ -62,7 +76,6 @@ class WhatsAppWebhookView(APIView):
         operation_summary="Meta Webhook Verification",
         operation_description=(
             "Used by Meta to verify ownership of the webhook endpoint. "
-            "Meta sends hub.mode, hub.verify_token, and hub.challenge as query params. "
             "Returns the hub.challenge value if the verify_token matches."
         ),
         tags=["WhatsApp Webhook"],
@@ -77,20 +90,18 @@ class WhatsAppWebhookView(APIView):
                 "hub.verify_token",
                 openapi.IN_QUERY,
                 type=openapi.TYPE_STRING,
-                description="Your META_VERIFY_TOKEN from .env",
+                description="Your META_VERIFY_TOKEN",
             ),
             openapi.Parameter(
                 "hub.challenge",
                 openapi.IN_QUERY,
                 type=openapi.TYPE_STRING,
-                description="Random challenge string from Meta",
+                description="Random challenge from Meta",
             ),
         ],
         responses={
-            200: openapi.Response(
-                "Verification successful — returns hub.challenge value"
-            ),
-            403: openapi.Response("Invalid verify token"),
+            200: openapi.Response("Returns hub.challenge"),
+            403: openapi.Response("Invalid token"),
         },
     )
     def get(self, request):
@@ -104,63 +115,39 @@ class WhatsAppWebhookView(APIView):
     @swagger_auto_schema(
         operation_summary="Receive incoming WhatsApp messages",
         operation_description=(
-            "Meta posts all incoming events here (messages, status updates, etc.). "
-            "The handler saves the message to DB and forwards it to the AI bot. "
-            "The bot then calls /reply/direct/ or /reply/max/ to respond.\n\n"
-            "**This endpoint must return 200 within 5 s or Meta will retry.**"
+            "Meta posts all incoming events here. "
+            "Saves the message to DB and forwards it to the AI bot.\n\n"
+            "**Must return 200 within 5 s or Meta will retry.**"
         ),
         tags=["WhatsApp Webhook"],
         request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            description="Standard Meta Webhook payload",
+            type=openapi.TYPE_OBJECT, description="Standard Meta Webhook payload"
         ),
-        responses={
-            200: openapi.Response("Acknowledged"),
-        },
+        responses={200: openapi.Response("Acknowledged")},
     )
     def post(self, request):
-        handler = WebhookHandler()
-        handler.process_webhook(request.data, request=request)
+        WebhookHandler().process_webhook(request.data, request=request)
         return Response({"status": "received"}, status=status.HTTP_200_OK)
 
 
-# ─── Reply endpoints (called by the AI Bot) ───────────────────────────────────
+# ─── Reply endpoints ───────────────────────────────────────────────────────────
 
 
 class ReplyDirectView(APIView):
-    """
-    Send a WhatsApp message directly to a specific user.
-    Called by the AI bot when it wants to reply to the original sender.
-    """
-
     permission_classes = []
-    parser_classes = [JSONParser, PlainTextJSONParser, FormParser, MultiPartParser]
+    parser_classes = BOT_PARSERS
 
     @swagger_auto_schema(
         operation_summary="Send reply to a WhatsApp user",
         operation_description=(
-            "Called by the AI agent to send a message directly to a WhatsApp user.\n\n"
-            "**Message types:**\n"
-            "- `text` — requires `body`\n"
-            "- `image / video / audio / document` — requires `media_url` (publicly accessible)\n\n"
-            "### Example Request Payload\n"
+            "Called by the AI agent to send a message to a WhatsApp user.\n\n"
+            "**Message types:** `text` (requires `body`) | `image/video/audio/document` (requires `media_url`)\n\n"
+            "### Example Request\n"
             "```json\n"
-            "{\n"
-            '  "to": "8801641697469",\n'
-            '  "message_type": "text",\n'
-            '  "body": "Here are your flight details!",\n'
-            '  "media_url": null\n'
-            "}\n"
+            '{ "to": "8801641697469", "message_type": "text", "body": "Your flight is confirmed!" }\n'
             "```\n\n"
-            "### Example Response Payload\n"
-            "```json\n"
-            "{\n"
-            '  "status": "success",\n'
-            '  "message": "Direct message sent to 8801641697469",\n'
-            '  "wa_message_id": "wamid.HBg...",\n'
-            '  "meta_response": { ... }\n'
-            "}\n"
-            "```"
+            "### Example Response\n"
+            '```json\n{ "status": "sent", "wa_message_id": "wamid.HBg...", "to": "8801641697469" }\n```'
         ),
         tags=["WhatsApp Reply"],
         request_body=ReplyDirectSerializer,
@@ -176,26 +163,15 @@ class ReplyDirectView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         to = serializer.validated_data["to"]
-        meta_api = MetaAPI()
-        meta_response, err = _do_send(meta_api, to, serializer.validated_data)
+        meta_response, err = _do_send(MetaAPI(), to, serializer.validated_data)
         if err:
             return err
 
-        wa_message_id = None
         if "messages" in meta_response:
-            wa_message_id = meta_response["messages"][0].get("id")
-            contact, _ = WhatsAppContact.objects.get_or_create(phone_number=to)
-            WhatsAppMessage.objects.create(
-                contact=contact,
-                direction="out",
-                message_type=serializer.validated_data["message_type"],
-                body=serializer.validated_data.get("body", ""),
-                media_url=serializer.validated_data.get("media_url"),
-                wa_message_id=wa_message_id,
-                status="sent",
-            )
+            wa_id = meta_response["messages"][0].get("id")
+            _save_outgoing(to, serializer.validated_data, wa_id)
             return Response(
-                {"status": "sent", "wa_message_id": wa_message_id, "to": to},
+                {"status": "sent", "wa_message_id": wa_id, "to": to},
                 status=status.HTTP_200_OK,
             )
 
@@ -203,55 +179,36 @@ class ReplyDirectView(APIView):
 
 
 class ReplyMaxView(APIView):
-    """
-    Send a WhatsApp message to the admin number (Max).
-    Called by the AI bot when it needs to notify the admin instead of (or in addition to) the user.
-    """
-
     permission_classes = []
-    parser_classes = [JSONParser, PlainTextJSONParser, FormParser, MultiPartParser]
+    parser_classes = BOT_PARSERS
 
     @swagger_auto_schema(
         operation_summary="Send notification to Max (admin)",
         operation_description=(
-            "Called by the AI agent to send a message to the admin WhatsApp number "
-            "configured as `WHATSAPP_ADMIN_NUMBER` in the environment.\n\n"
-            "**No `to` field needed** — the recipient is always the admin number.\n\n"
-            "**Message types:**\n"
-            "- `text` — requires `body`\n"
-            "- `image / video / audio / document` — requires `media_url` (publicly accessible)\n\n"
-            "### Example Request Payload\n"
+            "Called by the AI agent to send a WhatsApp message to the admin number (`WHATSAPP_ADMIN_NUMBER`).\n\n"
+            "No `to` field needed — recipient is always the admin.\n\n"
+            "**Message types:** `text` (requires `body`) | `image/video/audio/document` (requires `media_url`)\n\n"
+            "### Example Request\n"
             "```json\n"
-            "{\n"
-            '  "message_type": "text",\n'
-            '  "body": "Alert: The user needs human assistance!",\n'
-            '  "media_url": null\n'
-            "}\n"
+            '{ "message_type": "text", "body": "Alert: user needs help!" }\n'
             "```\n\n"
-            "### Example Response Payload\n"
-            "```json\n"
-            "{\n"
-            '  "status": "success",\n'
-            '  "message": "Message sent to admin",\n'
-            '  "wa_message_id": "wamid.HBg...",\n'
-            '  "meta_response": { ... }\n'
-            "}\n"
-            "```"
+            "### Example Response\n"
+            '```json\n{ "status": "sent", "wa_message_id": "wamid.HBg...", "to": "880..." }\n```'
         ),
         tags=["WhatsApp Reply"],
         request_body=ReplyMaxSerializer,
         responses={
             200: ReplyResponseSerializer,
             400: openapi.Response("Validation error"),
-            503: openapi.Response("WHATSAPP_ADMIN_NUMBER not configured"),
+            503: openapi.Response("Admin number not set"),
             502: openapi.Response("Meta API error"),
         },
     )
     def post(self, request):
-        admin_number = settings.WHATSAPP_ADMIN_NUMBER
-        if not admin_number:
+        admin = settings.WHATSAPP_ADMIN_NUMBER
+        if not admin:
             return Response(
-                {"error": "WHATSAPP_ADMIN_NUMBER is not configured in environment"},
+                {"error": "WHATSAPP_ADMIN_NUMBER not configured"},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -259,28 +216,15 @@ class ReplyMaxView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        meta_api = MetaAPI()
-        meta_response, err = _do_send(meta_api, admin_number, serializer.validated_data)
+        meta_response, err = _do_send(MetaAPI(), admin, serializer.validated_data)
         if err:
             return err
 
-        wa_message_id = None
         if "messages" in meta_response:
-            wa_message_id = meta_response["messages"][0].get("id")
-            contact, _ = WhatsAppContact.objects.get_or_create(
-                phone_number=admin_number
-            )
-            WhatsAppMessage.objects.create(
-                contact=contact,
-                direction="out",
-                message_type=serializer.validated_data["message_type"],
-                body=serializer.validated_data.get("body", ""),
-                media_url=serializer.validated_data.get("media_url"),
-                wa_message_id=wa_message_id,
-                status="sent",
-            )
+            wa_id = meta_response["messages"][0].get("id")
+            _save_outgoing(admin, serializer.validated_data, wa_id)
             return Response(
-                {"status": "sent", "wa_message_id": wa_message_id, "to": admin_number},
+                {"status": "sent", "wa_message_id": wa_id, "to": admin},
                 status=status.HTTP_200_OK,
             )
 
@@ -296,9 +240,8 @@ class MediaProxyView(APIView):
     @swagger_auto_schema(
         operation_summary="Stream Meta media file",
         operation_description=(
-            "Proxies a media file from Meta's CDN using the stored `media_id`. "
-            "This avoids exposing the Meta access token to external clients. "
-            "The response is the raw binary content of the file."
+            "Proxies a media file from Meta's CDN. "
+            "Avoids exposing the Meta access token to clients."
         ),
         tags=["WhatsApp Media"],
         manual_parameters=[
@@ -306,30 +249,32 @@ class MediaProxyView(APIView):
                 "media_id",
                 openapi.IN_PATH,
                 type=openapi.TYPE_STRING,
-                description="Meta media ID (e.g. 1262574552048176)",
-            )
+                description="Meta media ID",
+            ),
         ],
         responses={
-            200: openapi.Response("Raw binary file content"),
-            404: openapi.Response("Media ID not found or URL not returned"),
-            502: openapi.Response("Failed to fetch from Meta CDN"),
+            200: openapi.Response("Raw file binary"),
+            404: openapi.Response("Not found"),
+            502: openapi.Response("CDN fetch failed"),
         },
     )
     def get(self, request, media_id):
-        meta_api = MetaAPI()
-        media_info = meta_api.get_media_url(media_id)
+        media_info = MetaAPI().get_media_url(media_id)
         url = media_info.get("url")
         if not url:
             return Response(
                 {"error": "Media not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
-        headers = {"Authorization": f"Bearer {settings.META_ACCESS_TOKEN}"}
-        response = requests.get(url, headers=headers, stream=True)
-        if response.status_code == 200:
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {settings.META_ACCESS_TOKEN}"},
+            stream=True,
+        )
+        if resp.status_code == 200:
             return HttpResponse(
-                response.iter_content(chunk_size=8192),
-                content_type=response.headers.get("Content-Type"),
+                resp.iter_content(chunk_size=8192),
+                content_type=resp.headers.get("Content-Type"),
             )
         return Response(
             {"error": "Failed to fetch media from Meta"},

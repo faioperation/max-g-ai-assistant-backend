@@ -39,7 +39,6 @@ class WebhookHandler:
             from_number = msg.get("from")
             msg_type = msg.get("type", "text")
 
-            # 1. Get or create contact
             profile_name = (
                 contacts[0].get("profile", {}).get("name") if contacts else None
             )
@@ -48,7 +47,6 @@ class WebhookHandler:
                 defaults={"profile_name": profile_name},
             )
 
-            # 2. Extract message body/media
             body = ""
             media_id = None
             mime_type = None
@@ -61,18 +59,15 @@ class WebhookHandler:
                 mime_type = msg.get(msg_type, {}).get("mime_type")
                 body = msg.get(msg_type, {}).get("caption", "")
 
-                # Build proxy URL so media is accessible without Meta token
                 if media_id and request:
                     from django.urls import reverse
 
                     path = reverse("media-proxy", args=[media_id])
                     proxy_url = request.build_absolute_uri(path)
 
-            # Fallback body for media without caption
             if not body:
                 body = f"[{msg_type.capitalize()} uploaded]"
 
-            # 3. Save incoming message to DB
             WhatsAppMessage.objects.create(
                 contact=contact,
                 direction="in",
@@ -85,7 +80,6 @@ class WebhookHandler:
                 status="delivered",
             )
 
-            # 4. Forward to AI bot (fire-and-forget — bot calls back via /reply/ endpoints)
             self.bot_api.forward_to_bot(
                 sender_number=from_number,
                 message_text=body,

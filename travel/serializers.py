@@ -66,6 +66,12 @@ class BookingPassengerSerializer(serializers.Serializer):
     phone_number = serializers.CharField(
         help_text="Phone number in E.164 format (e.g. +8801641697469)"
     )
+    passenger_type = serializers.ChoiceField(
+        choices=["adult", "child", "infant_without_seat"],
+        default="adult",
+        required=False,
+        help_text="Passenger type: adult (default), child, or infant_without_seat"
+    )
     passport_number = serializers.CharField(
         required=False, 
         allow_blank=True, 

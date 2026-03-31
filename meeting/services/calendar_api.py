@@ -12,20 +12,21 @@ from dateutil.parser import parse as parse_date
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
 
 class CalendarService:
     def __init__(self):
         self.creds_path = settings.GOOGLE_CALENDAR_CREDENTIALS_PATH
-        self.token_path = getattr(settings, 'GOOGLE_CALENDAR_TOKEN_PATH', 'token.json')
-        self.calendar_id = settings.GOOGLE_CALENDAR_ID or 'primary'
+        self.token_path = getattr(settings, "GOOGLE_CALENDAR_TOKEN_PATH", "token.json")
+        self.calendar_id = settings.GOOGLE_CALENDAR_ID or "primary"
         self.creds = self._get_credentials()
 
     def _get_credentials(self):
         creds = None
         if os.path.exists(self.token_path):
             creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
-        
+
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 try:
@@ -33,21 +34,31 @@ class CalendarService:
                 except Exception as e:
                     logger.error(f"Error refreshing token: {str(e)}")
                     creds = None
-            
+
             if not creds:
                 if not os.path.exists(self.creds_path):
                     logger.error(f"Credentials file not found at {self.creds_path}")
                     return None
-                
-                flow = InstalledAppFlow.from_client_secrets_file(self.creds_path, SCOPES)
+
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.creds_path, SCOPES
+                )
                 creds = flow.run_local_server(port=0)
-                
-            with open(self.token_path, 'w') as token:
+
+            with open(self.token_path, "w") as token:
                 token.write(creds.to_json())
-        
+
         return creds
 
-    def create_event(self, summary, start_time, end_time=None, description=None, location=None, attendee_email=None):
+    def create_event(
+        self,
+        summary,
+        start_time,
+        end_time=None,
+        description=None,
+        location=None,
+        attendee_email=None,
+    ):
         if not self.creds:
             return {"error": "Google Calendar authentication failed"}
 
@@ -55,53 +66,53 @@ class CalendarService:
             end_time = start_time + datetime.timedelta(minutes=30)
 
         try:
-            service = build('calendar', 'v3', credentials=self.creds)
+            service = build("calendar", "v3", credentials=self.creds)
             event = {
-                'summary': summary,
-                'location': location,
-                'description': description,
-                'start': {
-                    'dateTime': start_time.isoformat(),
-                    'timeZone': 'UTC',
+                "summary": summary,
+                "location": location,
+                "description": description,
+                "start": {
+                    "dateTime": start_time.isoformat(),
+                    "timeZone": "UTC",
                 },
-                'end': {
-                    'dateTime': end_time.isoformat(),
-                    'timeZone': 'UTC',
+                "end": {
+                    "dateTime": end_time.isoformat(),
+                    "timeZone": "UTC",
                 },
-                'conferenceData': {
-                    'createRequest': {
-                        'requestId': str(uuid.uuid4()),
-                        'conferenceSolutionKey': {
-                            'type': 'hangoutsMeet'
-                        }
+                "conferenceData": {
+                    "createRequest": {
+                        "requestId": str(uuid.uuid4()),
+                        "conferenceSolutionKey": {"type": "hangoutsMeet"},
                     }
-                }
+                },
             }
-            
-            if attendee_email:
-                event['attendees'] = [{'email': attendee_email}]
 
-            # conferenceDataVersion=1 is required to create a Meet link
-            # sendUpdates='all' will email the attendees
-            event = service.events().insert(
-                calendarId=self.calendar_id, 
-                body=event,
-                conferenceDataVersion=1,
-                sendUpdates='all' if attendee_email else 'none'
-            ).execute()
-            
+            if attendee_email:
+                event["attendees"] = [{"email": attendee_email}]
+
+            event = (
+                service.events()
+                .insert(
+                    calendarId=self.calendar_id,
+                    body=event,
+                    conferenceDataVersion=1,
+                    sendUpdates="all" if attendee_email else "none",
+                )
+                .execute()
+            )
+
             meet_link = None
-            if 'conferenceData' in event and 'entryPoints' in event['conferenceData']:
-                for entry in event['conferenceData']['entryPoints']:
-                    if entry['entryPointType'] == 'video':
-                        meet_link = entry['uri']
+            if "conferenceData" in event and "entryPoints" in event["conferenceData"]:
+                for entry in event["conferenceData"]["entryPoints"]:
+                    if entry["entryPointType"] == "video":
+                        meet_link = entry["uri"]
                         break
 
             return {
-                "status": "success", 
-                "event_id": event.get('id'), 
-                "html_link": event.get('htmlLink'),
-                "meet_link": meet_link
+                "status": "success",
+                "event_id": event.get("id"),
+                "html_link": event.get("htmlLink"),
+                "meet_link": meet_link,
             }
 
         except HttpError as error:
@@ -116,8 +127,10 @@ class CalendarService:
 
             summary = f"Meeting scheduled via Bot: {text[:50]}..."
             description = f"Original request: {text}"
-            
-            return self.create_event(summary, dt, description=description, attendee_email=attendee_email)
+
+            return self.create_event(
+                summary, dt, description=description, attendee_email=attendee_email
+            )
         except Exception as e:
             logger.error(f"Error parsing date from text: {str(e)}")
             return {"error": "Could not understand the date/time."}
