@@ -352,7 +352,7 @@ class PaymentSuccessAPIView(APIView):
             # Notify Admin
             admin_number = getattr(settings, "WHATSAPP_ADMIN_NUMBER", None)
             if admin_number:
-                admin_msg = f"🔔 *New Payment Received*\n\nUser: {booking.whatsapp_number}\nAmount: {intent_data['amount']} {intent_data['currency']}\nOrder ID: {booking.duffel_order_id}\n\nTicket PDF: {pdf_url if pdf_url else 'Not available yet'}\nDashboard: {dashboard_url}"
+                admin_msg = f"🔔 *Payment Received*\n\nUser: {booking.whatsapp_number}\nAmount: {intent_data['amount']} {intent_data['currency']}\nOrder ID: {booking.duffel_order_id}\n\nTicket PDF: {pdf_url if pdf_url else 'Not available yet'}\nDashboard: {dashboard_url}"
                 meta_api.send_text_message(admin_number, admin_msg)
 
         except Exception as e:
