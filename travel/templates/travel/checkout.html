@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Complete Flight Payment | Max AI Assistant</title>
+    <style>
+      :root {
+        --primary: #0f172a;
+        --accent: #2563eb;
+        --bg: #f8fafc;
+      }
+      body {
+        font-family: 'Inter', system-ui, sans-serif;
+        background-color: var(--bg);
+        color: var(--primary);
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
+      .container {
+        max-width: 500px;
+        width: 100%;
+        background: #fff;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+      }
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .header h2 {
+        margin: 0;
+        color: var(--accent);
+        font-size: 24px;
+      }
+      .header p {
+        margin: 10px 0 0 0;
+        color: #64748b;
+        font-size: 14px;
+      }
+      #success-state {
+        display: none;
+        text-align: center;
+        padding: 40px 0;
+      }
+      #success-state svg {
+        width: 80px;
+        height: 80px;
+        color: #10b981;
+        margin-bottom: 20px;
+      }
+      #success-state p {
+        color: #475569;
+        font-size: 16px;
+      }
+    </style>
+    <!-- Load Duffel Components -->
+    <script src="https://assets.duffel.com/components/3.13.1/duffel-payments.js"></script>
+  </head>
+  <body>
+    <div class="container" id="checkout-container">
+      <div class="header">
+        <div class="logo">Max-G Travel</div>
+        <h1>Secure Checkout</h1>
+        <p>Please enter your payment details to confirm your flight ticket.</p>
+      </div>
+
+      <div id="payment-container">
+        <!-- Custom element tag -->
+        <duffel-payments id="payment-component"></duffel-payments>
+        <div id="error-display" style="display: none; color: #ff3b30; margin-top: 20px; padding: 15px; background: rgba(255, 59, 48, 0.1); border-radius: 8px; border: 1px solid #ff3b30;">
+          <strong>Payment Error:</strong> <span id="error-message"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="container" id="success-state">
+      <div class="success-icon">✓</div>
+      <h2>Payment Successful!</h2>
+      <p>Your flight has been confirmed. You will receive your e-ticket via WhatsApp shortly.</p>
+      <div style="margin-top: 25px;">
+        <a id="download-btn" href="#" target="_blank" style="display: none; background: #10B981; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2); transition: all 0.3s ease;">📥 Download E-Ticket (PDF)</a>
+      </div>
+    </div>
+
+    <script>
+      const CLIENT_TOKEN = '{{ client_token|safe }}'
+      const INTENT_ID = '{{ intent_id|safe }}'
+      
+      window.onload = function () {
+        const paymentElement = document.getElementById('payment-component')
+        const paymentContainer = document.getElementById('checkout-container')
+        const successState = document.getElementById('success-state')
+        const errorDisplay = document.getElementById('error-display')
+        const errorMessage = document.getElementById('error-message')
+        const downloadBtn = document.getElementById('download-btn')
+      
+        if (!CLIENT_TOKEN || CLIENT_TOKEN === 'None' || CLIENT_TOKEN === '') {
+          console.error('Missing Client Token')
+          errorDisplay.style.display = 'block'
+          errorMessage.innerText = 'CRITICAL ERROR: No payment token found. Please create a NEW booking link.'
+          return
+        }
+      
+        console.log('Initializing Duffel Payments Component v3.13.1...')
+        console.log('Intent ID:', INTENT_ID)
+      
+        paymentElement.addEventListener('onSuccessfulPayment', function (event) {
+          console.log('Payment successful event received!', event.detail)
+      
+          fetch('/api/v1/travel/api/payment/success/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ intent_id: INTENT_ID })
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.status === 'success') {
+                paymentContainer.style.display = 'none'
+                successState.style.display = 'block'
+      
+                if (data.pdf_url) {
+                  downloadBtn.href = data.pdf_url
+                  downloadBtn.innerHTML = '📥 Download E-Ticket (PDF)'
+                } else {
+                  downloadBtn.href = data.dashboard_url
+                  downloadBtn.innerHTML = '📄 View / Export Ticket'
+                }
+                downloadBtn.style.display = 'inline-block'
+              } else {
+                errorDisplay.style.display = 'block'
+                errorMessage.innerText = 'Payment recorded, but ticket issue failed: ' + data.error
+              }
+            })
+            .catch((err) => {
+              console.error('Backend notification error:', err)
+            })
+        })
+      
+        paymentElement.addEventListener('onFailedPayment', function (event) {
+          console.error('Payment failed event:', event.detail)
+          errorDisplay.style.display = 'block'
+          errorMessage.innerText = event.detail.message || 'Payment verification failed.'
+        })
+      
+        paymentElement.render({
+          paymentIntentClientToken: CLIENT_TOKEN,
+          debug: true,
+          styles: {
+            accentColor: '#007bff',
+            borderRadius: '8px'
+          }
+        })
+      }
+    </script>
+  </body>
+</html>

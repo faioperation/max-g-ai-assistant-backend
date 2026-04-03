@@ -4,101 +4,28 @@ from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.response import Response
+from django.shortcuts import render
 from rest_framework.views import APIView
 
-from travel.serializers import FlightBookSerializer, FlightSearchSerializer
-from travel.services.duffel import book_flight, get_headers, search_flights
+from travel.models import PendingBooking
+from travel.schema_examples import *
+from travel.serializers import (
+    FlightBookSerializer,
+    FlightSearchSerializer,
+    FlightHoldSerializer,
+)
+from travel.services.duffel import (
+    book_flight,
+    get_headers,
+    search_flights,
+    create_payment_intent,
+    get_payment_intent,
+    pay_held_order,
+    get_offer,
+    get_order_details,
+)
 
 logger = logging.getLogger(__name__)
-
-SEARCH_EXAMPLE_REQUEST = """
-```json
-{
-  "slices": [
-    { "origin": "DAC", "destination": "DXB", "departure_date": "2026-05-01" }
-  ],
-  "passengers": [
-    { "type": "adult" }
-  ]
-}
-```
-"""
-
-SEARCH_EXAMPLE_RESPONSE = """
-```json
-[
-  {
-    "offer_request_id": "orq_0000B4...",
-    "offers_count": 10,
-    "offers": [
-      {
-        "offer_id": "off_00...",
-        "total_amount": "798.10",
-        "total_currency": "USD",
-        "expires_at": "2026-03-29T23:44:13Z",
-        "slices": [
-          {
-            "fare_brand_name": "Economy Flex",
-            "segments": [
-              {
-                "aircraft": { "iata_code": "32N", "name": "Airbus A320neo", "id": "arc_000" },
-                "departing_at": "2026-05-01T11:45:00",
-                "arriving_at": "2026-05-01T14:35:00",
-                "operating_carrier": { "iata_code": "AI", "name": "Air India", "id": "arl_000" }
-              }
-            ],
-            "origin": { "iata_city_code": "DAC", "city_name": "Dhaka", "name": "Shahjalal Intl", "id": "arp_dac" },
-            "destination": { "iata_city_code": "DXB", "city_name": "Dubai", "name": "Dubai Intl", "id": "arp_dxb" },
-            "id": "sli_00..."
-          }
-        ],
-        "owner": { "iata_code": "AI", "name": "Air India", "id": "arl_00..." }
-      }
-    ]
-  }
-]
-```
-"""
-
-BOOK_EXAMPLE_REQUEST = """
-```json
-{
-  "offer_id": "off_0000B4lQ03f7GsWITc3MlW",
-  "passengers": [
-    {
-      "type": "adult",
-      "title": "mr",
-      "given_name": "Arif",
-      "family_name": "Rahman",
-      "born_on": "1990-01-15",
-      "gender": "m",
-      "email": "arif@example.com",
-      "phone_number": "+8801641697469",
-      "passport_number": "A1234567",
-      "passport_expiry_date": "2030-10-15",
-      "passport_issuing_country": "BD"
-    }
-  ]
-}
-```
-
-**Notes:**
-- `type` — passenger type: `adult` (default), `child`, or `infant_without_seat`
-- `passport_*` fields are **optional** (required for international flights in production)
-- You do NOT need to pass passenger IDs or payment amount — the backend resolves them automatically
-"""
-
-BOOK_EXAMPLE_RESPONSE = """
-```json
-{
-  "order_id": "ord_0000B4mX98d...",
-  "booking_reference": "XYZ123",
-  "status": "confirmed",
-  "total_amount": "798.10",
-  "total_currency": "USD"
-}
-```
-"""
 
 
 class FlightSearchView(APIView):
@@ -109,9 +36,11 @@ class FlightSearchView(APIView):
         operation_description=(
             "Search for available flight offers via Duffel API. "
             "Returns a deduplicated list of offers formatted for display.\n\n"
-            "Use the returned `offer_id` to call `/flights/book/`.\n\n"
-            "### Example Request\n" + SEARCH_EXAMPLE_REQUEST +
-            "\n### Example Response\n" + SEARCH_EXAMPLE_RESPONSE
+            "Use the returned `offer_id` to call `/flights/book/` or `/flights/hold/`.\n\n"
+            "### Example Request\n"
+            + SEARCH_EXAMPLE_REQUEST
+            + "\n### Example Response\n"
+            + SEARCH_EXAMPLE_RESPONSE
         ),
         tags=["Travel — Flights"],
         request_body=FlightSearchSerializer,
@@ -129,7 +58,9 @@ class FlightSearchView(APIView):
         try:
             get_headers()
         except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
 
         try:
             result, error = search_flights(
@@ -148,11 +79,14 @@ class FlightBookView(APIView):
     permission_classes = []
 
     @swagger_auto_schema(
-        operation_summary="Book a flight offer",
+        operation_summary="Book a flight offer (Instant Pay)",
         operation_description=(
-            "Confirm and book a flight using a Duffel `offer_id` from `/flights/search/`.\n\n"
-            "### Example Request\n" + BOOK_EXAMPLE_REQUEST +
-            "\n### Example Response\n" + BOOK_EXAMPLE_RESPONSE
+            "Confirm and book a flight using a Duffel `offer_id` from `/flights/search/`.\n"
+            "Uses account balance to pay immediately.\n\n"
+            "### Example Request\n"
+            + BOOK_EXAMPLE_REQUEST
+            + "\n### Example Response\n"
+            + BOOK_EXAMPLE_RESPONSE
         ),
         tags=["Travel — Flights"],
         request_body=FlightBookSerializer,
@@ -170,7 +104,9 @@ class FlightBookView(APIView):
         try:
             get_headers()
         except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
 
         try:
             result, error = book_flight(
@@ -183,3 +119,251 @@ class FlightBookView(APIView):
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FlightHoldView(APIView):
+    permission_classes = []
+
+    @swagger_auto_schema(
+        operation_summary="Hold a flight and create payment intent",
+        operation_description=(
+            "Reserve a flight using a Duffel `offer_id` and generate a Payment Intent for checkout.\n\n"
+            "Returns a `checkout_url` which should be sent to the user on WhatsApp.\n\n"
+            "### Example Request\n"
+            + HOLD_EXAMPLE_REQUEST
+            + "\n### Example Response\n"
+            + HOLD_EXAMPLE_RESPONSE
+        ),
+        tags=["Travel — Flights"],
+        request_body=FlightHoldSerializer,
+        responses={
+            200: openapi.Response("Payment checkout link generated"),
+            400: openapi.Response("Validation or Duffel API error"),
+            503: openapi.Response("Duffel API not configured"),
+        },
+    )
+    def post(self, request):
+        serializer = FlightHoldSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            get_headers()
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        try:
+            result, error = book_flight(
+                offer_id=serializer.validated_data["offer_id"],
+                passengers_input=serializer.validated_data["passengers"],
+                payment_type="balance",
+                order_type="hold",
+            )
+
+            is_deferred = False
+            if error:
+
+                if isinstance(error, str) and "not supported" in error:
+                    offer_data, get_err = get_offer(
+                        serializer.validated_data["offer_id"]
+                    )
+                    if get_err:
+                        return Response(
+                            {"error": f"Failed to fetch offer: {get_err}"},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                    amount = offer_data["total_amount"]
+                    currency = offer_data["total_currency"]
+                    order_id = None
+                    is_deferred = True
+                else:
+                    return Response(
+                        {"error": f"Hold failed: {error}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            else:
+                amount = result["total_amount"]
+                currency = result["total_currency"]
+                order_id = result["order_id"]
+
+            intent, err = create_payment_intent(amount, currency)
+            if err:
+                return Response(
+                    {"error": f"Step 2 (Create Payment Intent) failed: {err}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            import json
+
+            raw_data = None
+            if is_deferred:
+                raw_data = json.loads(
+                    json.dumps(serializer.validated_data, default=str)
+                )
+
+            PendingBooking.objects.create(
+                duffel_order_id=order_id,
+                payment_intent_id=intent["id"],
+                client_token=intent["client_token"],
+                whatsapp_number=serializer.validated_data["whatsapp_number"],
+                raw_booking_data=raw_data,
+                status="pending",
+            )
+
+            return Response(
+                {
+                    "checkout_url": request.build_absolute_uri(
+                        f"/api/v1/travel/checkout/{intent['id']}/"
+                    ),
+                    "order_id": order_id,
+                    "amount": amount,
+                    "currency": currency,
+                    "booking_type": "hold" if not is_deferred else "deferred",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PaymentCheckoutView(APIView):
+    """View to serve the HTML checkout page for Duffel Payments."""
+
+    permission_classes = []
+
+    def get(self, request, intent_id):
+        try:
+            booking = PendingBooking.objects.get(payment_intent_id=intent_id)
+        except PendingBooking.DoesNotExist:
+            return Response(
+                {"error": "Invalid payment link"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        if booking.status == "paid":
+            return Response(
+                {"message": "This order has already been paid."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client_token = booking.client_token
+        if not client_token:
+            intent_data, err = get_payment_intent(intent_id)
+            if err:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+            client_token = intent_data.get("client_token")
+
+        if not client_token:
+            return Response(
+                {"error": "Payment token not found. Please create a new booking."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return render(
+            request,
+            "travel/checkout.html",
+            {"client_token": client_token, "intent_id": intent_id},
+        )
+
+
+class PaymentSuccessAPIView(APIView):
+    """API called by the frontend when Duffel payment succeeds."""
+
+    permission_classes = []
+
+    def post(self, request):
+        intent_id = request.data.get("intent_id")
+        if not intent_id:
+            return Response(
+                {"error": "Missing intent_id"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            booking = PendingBooking.objects.get(
+                payment_intent_id=intent_id, status="pending"
+            )
+        except PendingBooking.DoesNotExist:
+            return Response(
+                {"error": "Booking not found or already paid."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        intent_data, err = get_payment_intent(intent_id)
+        if err or intent_data.get("status") != "succeeded":
+            return Response(
+                {"error": "Payment not completed or verified"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if booking.duffel_order_id:
+            pay_result, pay_err = pay_held_order(
+                booking.duffel_order_id, intent_data["amount"], intent_data["currency"]
+            )
+        else:
+            pay_result, pay_err = book_flight(
+                offer_id=booking.raw_booking_data["offer_id"],
+                passengers_input=booking.raw_booking_data["passengers"],
+                payment_type="balance",
+                order_type="instant",
+            )
+            if not pay_err:
+                booking.duffel_order_id = pay_result["order_id"]
+
+        if pay_err:
+            booking.status = "failed"
+            booking.save()
+            return Response(
+                {"error": f"Failed to issue ticket: {pay_err}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        booking.status = "paid"
+        booking.save()
+
+        order_data, _ = get_order_details(booking.duffel_order_id)
+        pdf_url = None
+        if order_data and "documents" in order_data:
+            for doc in order_data["documents"]:
+                if doc.get("type") == "electronic_ticket":
+                    pdf_url = doc.get("pdf_url")
+                    break
+
+        dashboard_url = (
+            f"https://app.duffel.com/arus/test/orders/{booking.duffel_order_id}"
+        )
+
+        try:
+            from whatsapp.services.meta_api import MetaAPI
+            from django.conf import settings
+
+            meta_api = MetaAPI()
+
+            user_msg = f"🎉 Your payment for flight order #{booking.duffel_order_id} was successful! Your e-ticket is confirmed."
+            if pdf_url:
+                user_msg += f"\n\nYou can download your ticket here: {pdf_url}"
+            else:
+                user_msg += f"\n\nYou can view your booking here: {dashboard_url}"
+
+            meta_api.send_text_message(booking.whatsapp_number, user_msg)
+
+            # Notify Admin
+            admin_number = getattr(settings, "WHATSAPP_ADMIN_NUMBER", None)
+            if admin_number:
+                admin_msg = f"🔔 *New Payment Received*\n\nUser: {booking.whatsapp_number}\nAmount: {intent_data['amount']} {intent_data['currency']}\nOrder ID: {booking.duffel_order_id}\n\nTicket PDF: {pdf_url if pdf_url else 'Not available yet'}\nDashboard: {dashboard_url}"
+                meta_api.send_text_message(admin_number, admin_msg)
+
+        except Exception as e:
+            logger.error(f"Failed to send success WhatsApp: {str(e)}")
+
+        return Response(
+            {
+                "status": "success",
+                "order_id": booking.duffel_order_id,
+                "pdf_url": pdf_url,
+                "dashboard_url": dashboard_url,
+            },
+            status=status.HTTP_200_OK,
+        )

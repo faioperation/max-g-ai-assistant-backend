@@ -12,7 +12,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-DUFFEL_API_URL = "https://api.duffel.com/air"
+DUFFEL_BASE_URL = "https://api.duffel.com"
+DUFFEL_AIR_URL = f"{DUFFEL_BASE_URL}/air"
+DUFFEL_PAYMENTS_URL = f"{DUFFEL_BASE_URL}/payments"
 
 
 def get_headers():
@@ -87,6 +89,7 @@ def _format_offer(raw):
         "offer_id": raw.get("id"),
         "total_amount": raw.get("total_amount"),
         "total_currency": raw.get("total_currency"),
+        "supported_order_strategies": raw.get("supported_order_strategies", []),
         "expires_at": raw.get("expires_at"),
         "slices": formatted_slices,
         "owner": {
@@ -99,27 +102,28 @@ def _format_offer(raw):
 
 def search_flights(slices_data, passengers_data, max_results=50):
     """
-    Search for available flights and return a deduplicated, formatted list.
-    Returns (result_list, error_string_or_None).
+    Search for flights via Duffel.
+    Deduplicates results by flight signature (carriers + times).
     """
     headers = get_headers()
 
-    slices_payload = [
-        {
-            "origin": s["origin"],
-            "destination": s["destination"],
-            "departure_date": (
-                s["departure_date"].isoformat()
-                if isinstance(s["departure_date"], datetime.date)
-                else s["departure_date"]
-            ),
-        }
-        for s in slices_data
-    ]
+    slices_payload = []
+    for s in slices_data:
+        dep_date = s.get("departure_date")
+        if isinstance(dep_date, datetime.date):
+            dep_date = dep_date.isoformat()
+            
+        slices_payload.append(
+            {
+                "origin": s.get("origin"),
+                "destination": s.get("destination"),
+                "departure_date": dep_date,
+            }
+        )
 
     # Step 1: Create an offer request
     or_res = requests.post(
-        f"{DUFFEL_API_URL}/offer_requests",
+        f"{DUFFEL_AIR_URL}/offer_requests",
         headers=headers,
         json={"data": {"slices": slices_payload, "passengers": passengers_data}},
     )
@@ -127,11 +131,11 @@ def search_flights(slices_data, passengers_data, max_results=50):
         msg, _ = _duffel_error(or_res)
         return None, msg
 
-    offer_request_id = or_res.json()["data"]["id"]
+    offer_request_id = or_res.json().get("data", {}).get("id")
 
     # Step 2: Fetch the offers
     offers_res = requests.get(
-        f"{DUFFEL_API_URL}/offers",
+        f"{DUFFEL_AIR_URL}/offers",
         headers=headers,
         params={"offer_request_id": offer_request_id, "limit": max_results},
     )
@@ -140,6 +144,8 @@ def search_flights(slices_data, passengers_data, max_results=50):
         return None, msg
 
     offers_raw = offers_res.json().get("data", [])
+    if offers_raw:
+        logger.info("DEBUG: First Raw Duffel Offer: %s", json.dumps(offers_raw[0]))
 
     # Step 3: Deduplicate by flight signature and format
     seen = set()
@@ -167,7 +173,17 @@ def search_flights(slices_data, passengers_data, max_results=50):
     ], None
 
 
-def book_flight(offer_id, passengers_input, payment_type="balance"):
+def get_offer(offer_id):
+    """Fetch a single Duffel offer."""
+    headers = get_headers()
+    res = requests.get(f"{DUFFEL_AIR_URL}/offers/{offer_id}", headers=headers)
+    if res.status_code >= 400:
+        msg, req_id = _duffel_error(res)
+        return None, msg
+    return res.json()["data"], None
+
+
+def book_flight(offer_id, passengers_input, payment_type="balance", order_type="instant"):
     """
     Book a flight offer.
     Returns (booking_result_dict, error_dict_or_None).
@@ -175,7 +191,7 @@ def book_flight(offer_id, passengers_input, payment_type="balance"):
     headers = get_headers()
 
     # 1. Fetch offer to get amount and passenger IDs
-    offer_res = requests.get(f"{DUFFEL_API_URL}/offers/{offer_id}", headers=headers)
+    offer_res = requests.get(f"{DUFFEL_AIR_URL}/offers/{offer_id}", headers=headers)
     if offer_res.status_code >= 400:
         msg, _ = _duffel_error(offer_res)
         return None, {"error": msg}
@@ -184,6 +200,11 @@ def book_flight(offer_id, passengers_input, payment_type="balance"):
     total_amount = offer_data.get("total_amount")
     total_currency = offer_data.get("total_currency")
     offer_passengers = offer_data.get("passengers", [])
+
+    # Validate order strategy
+    strategies = offer_data.get("supported_order_strategies", ["instant"])
+    if order_type not in strategies:
+        return None, f"Order strategy '{order_type}' is not supported by this carrier. This flight must be booked via: {', '.join(strategies)}"
 
     # 2. Build clean passenger dicts for Duffel
     duffel_passengers = []
@@ -194,12 +215,18 @@ def book_flight(offer_id, passengers_input, payment_type="balance"):
         if isinstance(born_on, datetime.date):
             born_on = born_on.isoformat()
 
+        import re
+        def clean_name(name):
+            if not name: return ""
+            # Keep only letters and spaces
+            return re.sub(r'[^a-zA-Z\s]', '', name).strip()
+
         pax = {
             "id": p.get("id") or offer_pax.get("id"),
             "type": p.get("type") or p.get("passenger_type") or "adult",
-            "title": p.get("title"),
-            "given_name": p.get("given_name"),
-            "family_name": p.get("family_name"),
+            "title": p.get("title", "mr").lower(),
+            "given_name": clean_name(p.get("given_name")),
+            "family_name": clean_name(p.get("family_name")),
             "born_on": born_on,
             "gender": p.get("gender"),
             "email": p.get("email"),
@@ -225,23 +252,25 @@ def book_flight(offer_id, passengers_input, payment_type="balance"):
 
     payload = {
         "data": {
-            "type": "instant",
+            "type": order_type,
             "selected_offers": [offer_id],
             "passengers": duffel_passengers,
-            "payments": [
-                {
-                    "type": payment_type,
-                    "currency": total_currency,
-                    "amount": total_amount,
-                }
-            ],
         }
     }
+    
+    if order_type == "instant":
+        payload["data"]["payments"] = [
+            {
+                "type": payment_type,
+                "currency": total_currency,
+                "amount": total_amount,
+            }
+        ]
 
     logger.info("Duffel booking payload: %s", json.dumps(payload))
 
     # 3. Place the order
-    res = requests.post(f"{DUFFEL_API_URL}/orders", headers=headers, json=payload)
+    res = requests.post(f"{DUFFEL_AIR_URL}/orders", headers=headers, json=payload)
     if res.status_code >= 400:
         msg, req_id = _duffel_error(res)
         return None, {
@@ -262,3 +291,67 @@ def book_flight(offer_id, passengers_input, payment_type="balance"):
         "total_amount": raw.get("total_amount"),
         "total_currency": raw.get("total_currency"),
     }, None
+
+
+def create_payment_intent(amount, currency):
+    """Create a Duffel Payment Intent."""
+    headers = get_headers()
+    payload = {
+        "data": {
+            "amount": str(amount),
+            "currency": currency,
+        }
+    }
+    res = requests.post(f"{DUFFEL_PAYMENTS_URL}/payment_intents", headers=headers, json=payload)
+    if res.status_code >= 400:
+        msg, req_id = _duffel_error(res)
+        return None, msg
+    
+    data = res.json().get("data", {})
+    return {
+        "id": data.get("id"),
+        "client_token": data.get("client_token"),
+    }, None
+
+
+def get_payment_intent(intent_id):
+    """Get a Duffel Payment Intent."""
+    headers = get_headers()
+    res = requests.get(f"{DUFFEL_PAYMENTS_URL}/payment_intents/{intent_id}", headers=headers)
+    if res.status_code >= 400:
+        msg, req_id = _duffel_error(res)
+        return None, msg
+    
+    data = res.json().get("data", {})
+    return data, None
+
+
+def pay_held_order(order_id, amount, currency, payment_type="balance"):
+    """Officially pay for a 'held' order using Duffel balance."""
+    headers = get_headers()
+    payload = {
+        "data": {
+            "payment": {
+                "type": payment_type,
+                "amount": str(amount),
+                "currency": currency,
+            }
+        }
+    }
+    res = requests.post(f"{DUFFEL_AIR_URL}/orders/{order_id}/actions/pay", headers=headers, json=payload)
+    if res.status_code >= 400:
+        msg, req_id = _duffel_error(res)
+        return None, msg
+    
+    data = res.json().get("data", {})
+    return data, None
+
+
+def get_order_details(order_id):
+    """Fetch full details of a Duffel order, including ticket documents."""
+    headers = get_headers()
+    res = requests.get(f"{DUFFEL_AIR_URL}/orders/{order_id}", headers=headers)
+    if res.status_code >= 400:
+        msg, req_id = _duffel_error(res)
+        return None, msg
+    return res.json().get("data", {}), None

@@ -104,3 +104,17 @@ class FlightBookSerializer(serializers.Serializer):
         required=False,
         help_text="Payment method: 'balance' (Duffel balance) or 'arc_bsp_cash'"
     )
+
+
+class FlightHoldSerializer(serializers.Serializer):
+    offer_id = serializers.CharField(
+        help_text="Duffel offer ID obtained from /flights/search/ (e.g. off_0000Aqn05etwE3zG9RXZwN)"
+    )
+    whatsapp_number = serializers.CharField(
+        help_text="User's WhatsApp number for sending payment link and ticket",
+        required=True
+    )
+    passengers = BookingPassengerSerializer(
+        many=True,
+        help_text="Full passenger details — must match the number of passengers in the offer"
+    )
