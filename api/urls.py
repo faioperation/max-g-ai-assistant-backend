@@ -4,5 +4,6 @@ urlpatterns = [
     path("whatsapp/", include("whatsapp.urls")),
     path("dashboard/", include("dashboard.urls")),
     path("travel/", include("travel.urls")),
+    path("stays/", include("stays.urls")),
     path("meeting-schedule/", include("meeting.urls")),
 ]

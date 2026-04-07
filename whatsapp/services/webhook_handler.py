@@ -1,6 +1,7 @@
 import logging
 from whatsapp.services.meta_api import MetaAPI
 from whatsapp.services.bot_api import BotAPI
+from whatsapp.services.google_drive import GoogleDriveService
 from whatsapp.models import WhatsAppContact, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
@@ -10,6 +11,7 @@ class WebhookHandler:
     def __init__(self):
         self.meta_api = MetaAPI()
         self.bot_api = BotAPI()
+        self.drive_service = GoogleDriveService()
 
     def process_webhook(self, data, request=None):
         """
@@ -54,7 +56,7 @@ class WebhookHandler:
 
             if msg_type == "text":
                 body = msg.get("text", {}).get("body", "")
-            elif msg_type in ["image", "video", "audio", "document"]:
+            elif msg_type in ["image", "video", "audio", "document", "voice"]:
                 media_id = msg.get(msg_type, {}).get("id")
                 mime_type = msg.get(msg_type, {}).get("mime_type")
                 body = msg.get(msg_type, {}).get("caption", "")
@@ -64,6 +66,17 @@ class WebhookHandler:
 
                     path = reverse("media-proxy", args=[media_id])
                     proxy_url = request.build_absolute_uri(path)
+
+                # TRIGGER GOOGLE DRIVE SYNC
+                # This runs synchronously in the webhook for now.
+                # In production, consider adding a task queue (like Celery)
+                self.drive_service.sync_whatsapp_media(
+                    contact_name=profile_name,
+                    phone_number=from_number,
+                    media_id=media_id,
+                    mime_type=mime_type,
+                    body_caption=body
+                )
 
             if not body:
                 body = f"[{msg_type.capitalize()} uploaded]"
