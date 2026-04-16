@@ -71,20 +71,13 @@ def format_stay_result(result: dict) -> dict:
             "payment_instruction_supported": accommodation.get(
                 "payment_instruction_supported"
             ),
-            # Brand & Chain
+            # Brand
             "brand": (
                 {
                     "id": brand.get("id"),
                     "name": brand.get("name"),
                 }
                 if brand
-                else None
-            ),
-            "chain": (
-                {
-                    "name": chain.get("name"),
-                }
-                if chain
                 else None
             ),
             # Location
@@ -103,7 +96,6 @@ def format_stay_result(result: dict) -> dict:
                 "check_in_before_time": check_in_info.get("check_in_before_time"),
                 "check_out_before_time": check_in_info.get("check_out_before_time"),
             },
-            # All amenities as a compact comma-separated string
             "amenities": ", ".join(
                 amenity.get("description", "")
                 for amenity in accommodation.get("amenities", [])
@@ -113,7 +105,7 @@ def format_stay_result(result: dict) -> dict:
     }
 
 
-def search_stays(lat, lng, check_in, check_out, guests, rooms=1, radius=10):
+def search_stays(lat, lng, check_in, check_out, guests, rooms=1, radius=5):
     """
     Search for accommodations via Duffel Stays.
     Returns filtered and shaped data.
@@ -169,33 +161,37 @@ def format_stay_rates(data: dict) -> dict:
     for room in accommodation.get("rooms", []):
         formatted_rates = []
         for rate in room.get("rates", []):
-            formatted_rates.append({
-                "id": rate.get("id"),
-                "quantity_available": rate.get("quantity_available"),
-                "board_type": rate.get("board_type"),
-                "payment_type": rate.get("payment_type"),
-                "total_amount": rate.get("total_amount"),
-                "total_currency": rate.get("total_currency"),
-                "available_payment_methods": ", ".join(
-                    rate.get("available_payment_methods", [])
-                ),
-                "expires_at": rate.get("expires_at"),
-                # conditions as comma-separated titles
-                "conditions": ", ".join(
-                    c.get("title", "")
-                    for c in rate.get("conditions", [])
-                    if c.get("title")
-                ),
-            })
+            formatted_rates.append(
+                {
+                    "id": rate.get("id"),
+                    "quantity_available": rate.get("quantity_available"),
+                    "board_type": rate.get("board_type"),
+                    "payment_type": rate.get("payment_type"),
+                    "total_amount": rate.get("total_amount"),
+                    "total_currency": rate.get("total_currency"),
+                    "available_payment_methods": ", ".join(
+                        rate.get("available_payment_methods", [])
+                    ),
+                    "expires_at": rate.get("expires_at"),
+                    # conditions as comma-separated titles
+                    "conditions": ", ".join(
+                        c.get("title", "")
+                        for c in rate.get("conditions", [])
+                        if c.get("title")
+                    ),
+                }
+            )
 
-        formatted_rooms.append({
-            "name": room.get("name"),
-            "beds": [
-                {"type": b.get("type"), "count": b.get("count")}
-                for b in room.get("beds", [])
-            ],
-            "rates": formatted_rates,
-        })
+        formatted_rooms.append(
+            {
+                "name": room.get("name"),
+                "beds": [
+                    {"type": b.get("type"), "count": b.get("count")}
+                    for b in room.get("beds", [])
+                ],
+                "rates": formatted_rates,
+            }
+        )
 
     return {
         "id": data.get("id"),
@@ -208,7 +204,9 @@ def format_stay_rates(data: dict) -> dict:
             "name": accommodation.get("name"),
             "phone_number": accommodation.get("phone_number"),
             "email": accommodation.get("email"),
-            "supported_loyalty_programme": accommodation.get("supported_loyalty_programme"),
+            "supported_loyalty_programme": accommodation.get(
+                "supported_loyalty_programme"
+            ),
             "review_score": accommodation.get("review_score"),
             "review_count": accommodation.get("review_count"),
             "chain": {"name": chain.get("name")} if chain else None,
@@ -241,7 +239,9 @@ def get_stay_rates(search_result_id):
     Duffel Stays API: POST /stays/search_results/{id}/actions/fetch_all_rates
     """
     headers = get_stays_headers()
-    url = f"{DUFFEL_STAYS_URL}/search_results/{search_result_id}/actions/fetch_all_rates"
+    url = (
+        f"{DUFFEL_STAYS_URL}/search_results/{search_result_id}/actions/fetch_all_rates"
+    )
 
     # Duffel Stays rates endpoint requires POST (not GET)
     response = requests.post(url, headers=headers, json={})
