@@ -5,11 +5,9 @@ STAY_SEARCH_EXAMPLE_REQUEST = """
   "check_in_date": "2026-10-25",
   "check_out_date": "2026-10-30",
   "guests": [
-    { "type": "adult" },
     { "type": "adult" }
   ],
-  "rooms": 1,
-  "radius": 10
+  "rooms": 1
 }
 ```
 
