@@ -5,11 +5,12 @@ from rest_framework import serializers
 #  REQUEST SERIALIZERS
 # ─────────────────────────────────────────
 
+
 class StayGuestSerializer(serializers.Serializer):
     type = serializers.ChoiceField(
         choices=["adult", "child"],
         default="adult",
-        help_text="Guest type: 'adult' or 'child'"
+        help_text="Guest type: 'adult' or 'child'",
     )
 
 
@@ -26,17 +27,15 @@ class StaySearchSerializer(serializers.Serializer):
     guests = StayGuestSerializer(
         many=True,
         default=[{"type": "adult"}],
-        help_text="List of guests. Add one object per guest with their type."
+        help_text="List of guests. Add one object per guest with their type.",
     )
     rooms = serializers.IntegerField(
-        default=1,
-        min_value=1,
-        help_text="Number of rooms required"
+        default=1, min_value=1, help_text="Number of rooms required"
     )
     radius = serializers.IntegerField(
-        default=10,
+        default=5,
         min_value=1,
-        help_text="Search radius in kilometers from the location center"
+        help_text="Search radius in kilometers from the location center",
     )
 
 
@@ -44,8 +43,11 @@ class StaySearchSerializer(serializers.Serializer):
 #  RESPONSE SERIALIZERS (Swagger docs only)
 # ─────────────────────────────────────────
 
+
 class AmenitySerializer(serializers.Serializer):
-    type = serializers.CharField(help_text="Amenity type key (e.g. 'wifi', 'gym', 'pool')")
+    type = serializers.CharField(
+        help_text="Amenity type key (e.g. 'wifi', 'gym', 'pool')"
+    )
     description = serializers.CharField(help_text="Human-readable amenity label")
 
 
@@ -54,7 +56,9 @@ class AddressSerializer(serializers.Serializer):
     city_name = serializers.CharField(help_text="City name")
     postal_code = serializers.CharField(help_text="Postal / ZIP code")
     region = serializers.CharField(help_text="State or division")
-    country_code = serializers.CharField(help_text="ISO 3166-1 alpha-2 country code (e.g. 'BD')")
+    country_code = serializers.CharField(
+        help_text="ISO 3166-1 alpha-2 country code (e.g. 'BD')"
+    )
 
 
 class LocationSerializer(serializers.Serializer):
@@ -79,16 +83,21 @@ class BrandSerializer(serializers.Serializer):
 
 
 class ChainSerializer(serializers.Serializer):
-    name = serializers.CharField(help_text="Hotel chain name (e.g. 'InterContinental Hotels Group')")
+    name = serializers.CharField(
+        help_text="Hotel chain name (e.g. 'InterContinental Hotels Group')"
+    )
 
 
 class AccommodationSerializer(serializers.Serializer):
     id = serializers.CharField(help_text="Accommodation ID")
     name = serializers.CharField(help_text="Full property name")
-    phone_number = serializers.CharField(allow_null=True, help_text="Hotel contact number")
+    phone_number = serializers.CharField(
+        allow_null=True, help_text="Hotel contact number"
+    )
     email = serializers.CharField(allow_null=True, help_text="Hotel email address")
     supported_loyalty_programme = serializers.CharField(
-        allow_null=True, help_text="Supported loyalty programme (e.g. 'ihg_one_rewards')"
+        allow_null=True,
+        help_text="Supported loyalty programme (e.g. 'ihg_one_rewards')",
     )
     payment_instruction_supported = serializers.BooleanField(
         help_text="Whether the property supports payment instructions"
@@ -98,8 +107,7 @@ class AccommodationSerializer(serializers.Serializer):
     location = LocationSerializer()
     check_in_information = CheckInInformationSerializer()
     amenities = AmenitySerializer(
-        many=True,
-        help_text="All available amenities for this property"
+        many=True, help_text="All available amenities for this property"
     )
 
 
@@ -107,15 +115,27 @@ class StayResultSerializer(serializers.Serializer):
     id = serializers.CharField(help_text="Search result ID (use this to fetch rates)")
     check_in_date = serializers.DateField(help_text="Check-in date")
     check_out_date = serializers.DateField(help_text="Check-out date")
-    expires_at = serializers.DateTimeField(help_text="Expiry time of this search result")
+    expires_at = serializers.DateTimeField(
+        help_text="Expiry time of this search result"
+    )
     rooms = serializers.IntegerField(help_text="Number of rooms")
 
     # Pricing
-    cheapest_rate_total_amount = serializers.CharField(help_text="Total amount of the cheapest rate")
-    cheapest_rate_currency = serializers.CharField(help_text="Billing currency of the cheapest rate")
-    cheapest_rate_public_amount = serializers.CharField(help_text="Public display amount")
-    cheapest_rate_public_currency = serializers.CharField(help_text="Public display currency")
-    cheapest_rate_base_amount = serializers.CharField(help_text="Base amount before taxes/fees")
+    cheapest_rate_total_amount = serializers.CharField(
+        help_text="Total amount of the cheapest rate"
+    )
+    cheapest_rate_currency = serializers.CharField(
+        help_text="Billing currency of the cheapest rate"
+    )
+    cheapest_rate_public_amount = serializers.CharField(
+        help_text="Public display amount"
+    )
+    cheapest_rate_public_currency = serializers.CharField(
+        help_text="Public display currency"
+    )
+    cheapest_rate_base_amount = serializers.CharField(
+        help_text="Base amount before taxes/fees"
+    )
     cheapest_rate_base_currency = serializers.CharField(help_text="Base currency")
     cheapest_rate_due_at_accommodation_amount = serializers.CharField(
         help_text="Amount due at the property (pay at hotel)"
@@ -128,8 +148,12 @@ class StayResultSerializer(serializers.Serializer):
 
 
 class StaySearchResponseSerializer(serializers.Serializer):
-    created_at = serializers.DateTimeField(help_text="Timestamp when this search was created")
-    results = StayResultSerializer(many=True, help_text="List of matching hotel/stay results")
+    created_at = serializers.DateTimeField(
+        help_text="Timestamp when this search was created"
+    )
+    results = StayResultSerializer(
+        many=True, help_text="List of matching hotel/stay results"
+    )
 
 
 class StayRatesQuerySerializer(serializers.Serializer):
@@ -148,13 +172,13 @@ class StayHoldSerializer(serializers.Serializer):
     rate_id = serializers.CharField(
         help_text="The 'id' field of a specific rate from the rates endpoint"
     )
-    guests = StayBookingGuestSerializer(many=True, help_text="List of guests for the booking")
+    guests = StayBookingGuestSerializer(
+        many=True, help_text="List of guests for the booking"
+    )
     phone_number = serializers.CharField(
         help_text="Lead passenger phone number in E.164 format (e.g. +88019...)"
     )
-    email = serializers.EmailField(
-        help_text="Lead passenger email"
-    )
+    email = serializers.EmailField(help_text="Lead passenger email")
     whatsapp_number = serializers.CharField(
         help_text="WhatsApp number to send the payment link and confirmation to"
     )

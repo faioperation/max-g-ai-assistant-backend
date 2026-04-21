@@ -74,13 +74,13 @@ STAY_HOLD_EXAMPLE_REQUEST = """
   "rate_id": "rat_0000AJyeTUCEoY5PhVPN8k_0",
   "guests": [
     {
-      "given_name": "Arif",
-      "family_name": "Hassan",
-      "email": "arif@example.com"
+      "given_name": "Ariful",
+      "family_name": "Islam",
+      "email": "arif.fireai@gmail.com"
     }
   ],
   "phone_number": "+8801912345678",
-  "email": "arif@example.com",
+  "email": "arif.fireai@gmail.com",
   "whatsapp_number": "+8801912345678"
 }
 ```
