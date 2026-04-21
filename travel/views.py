@@ -1,12 +1,10 @@
 import logging
-
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.response import Response
 from django.shortcuts import render
 from rest_framework.views import APIView
-
 from travel.models import PendingBooking
 from travel.schema_examples import *
 from travel.serializers import (
@@ -70,52 +68,6 @@ class FlightSearchView(APIView):
             )
             if error:
                 return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
-            return Response(result, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class FlightBookView(APIView):
-    permission_classes = []
-
-    @swagger_auto_schema(
-        operation_summary="Book a flight offer (Instant Pay)",
-        operation_description=(
-            "Confirm and book a flight using a Duffel `offer_id` from `/flights/search/`.\n"
-            "Uses account balance to pay immediately.\n\n"
-            "### Example Request\n"
-            + BOOK_EXAMPLE_REQUEST
-            + "\n### Example Response\n"
-            + BOOK_EXAMPLE_RESPONSE
-        ),
-        tags=["Travel — Flights"],
-        request_body=FlightBookSerializer,
-        responses={
-            200: openapi.Response("Booking confirmed"),
-            400: openapi.Response("Validation or Duffel booking error"),
-            503: openapi.Response("Duffel API not configured"),
-        },
-    )
-    def post(self, request):
-        serializer = FlightBookSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            get_headers()
-        except ValueError as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-
-        try:
-            result, error = book_flight(
-                offer_id=serializer.validated_data["offer_id"],
-                passengers_input=serializer.validated_data["passengers"],
-                payment_type=serializer.validated_data.get("payment_type", "balance"),
-            )
-            if error:
-                return Response(error, status=status.HTTP_400_BAD_REQUEST)
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -331,9 +283,7 @@ class PaymentSuccessAPIView(APIView):
                     pdf_url = doc.get("pdf_url")
                     break
 
-        dashboard_url = (
-            f"https://app.duffel.com/arus/test/orders/{booking.duffel_order_id}"
-        )
+        dashboard_url = f"https://app.duffel.com/25aa8ec5a53032c948afa12/test/orders/{booking.duffel_order_id}"
 
         try:
             from whatsapp.services.meta_api import MetaAPI

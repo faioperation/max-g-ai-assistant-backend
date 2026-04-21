@@ -1,7 +1,6 @@
 from django.urls import path
 from travel.views import (
     FlightSearchView,
-    FlightBookView,
     FlightHoldView,
     PaymentCheckoutView,
     PaymentSuccessAPIView,
@@ -9,7 +8,6 @@ from travel.views import (
 
 urlpatterns = [
     path("flights/search/", FlightSearchView.as_view(), name="flight-search"),
-    # path("flights/book/", FlightBookView.as_view(), name="flight-book"),
     path("flights/hold/", FlightHoldView.as_view(), name="flight-hold"),
     path(
         "checkout/<str:intent_id>/", PaymentCheckoutView.as_view(), name="checkout_page"
