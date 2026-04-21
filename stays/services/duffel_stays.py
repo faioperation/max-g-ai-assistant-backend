@@ -6,6 +6,8 @@ logger = logging.getLogger(__name__)
 
 DUFFEL_BASE_URL = "https://api.duffel.com"
 DUFFEL_STAYS_URL = f"{DUFFEL_BASE_URL}/stays"
+DUFFEL_PAYMENTS_URL = f"{DUFFEL_BASE_URL}/payments"
+
 
 
 def get_stays_headers():
@@ -259,3 +261,102 @@ def get_stay_rates(search_result_id):
         return None, "No data returned from Duffel"
 
     return format_stay_rates(raw), None
+
+
+def create_stay_quote(rate_id):
+    """
+    POST /stays/quotes
+    Creates a quote for a specific rate, locking the price.
+    Returns (quote_id, total_amount, currency), Error
+    """
+    headers = get_stays_headers()
+    payload = {
+        "data": {
+            "rate_id": rate_id
+        }
+    }
+    
+    response = requests.post(f"{DUFFEL_STAYS_URL}/quotes", headers=headers, json=payload)
+    if response.status_code >= 400:
+        logger.error(f"Duffel Stays Quote Error: {response.text}")
+        try:
+            return None, response.json().get("errors", [{"message": "Unknown error"}])[0].get("message")
+        except Exception:
+            return None, response.text or "Unknown error creating quote"
+
+    data = response.json().get("data", {})
+    return {
+        "quote_id": data.get("id"),
+        "total_amount": data.get("total_amount"),
+        "total_currency": data.get("total_currency")
+    }, None
+
+
+def book_stay(quote_id, guests, phone_number, email):
+    """
+    POST /stays/bookings
+    Books a stay using Duffel Balance (by omitting the payment object).
+    """
+    headers = get_stays_headers()
+    payload = {
+        "data": {
+            "quote_id": quote_id,
+            "guests": guests,
+            "phone_number": phone_number,
+            "email": email
+        }
+    }
+    
+    response = requests.post(f"{DUFFEL_STAYS_URL}/bookings", headers=headers, json=payload)
+    if response.status_code >= 400:
+        logger.error(f"Duffel Stays Booking Error: {response.text}")
+        try:
+            errors = response.json().get("errors", [{"message": "Unknown error"}])
+            return None, errors[0].get("message")
+        except Exception:
+            return None, response.text or "Unknown error creating booking"
+
+    data = response.json().get("data", {})
+    return data, None
+
+
+def create_payment_intent(amount, currency):
+    """
+    Create a Duffel Payment Intent.
+    (Can be reused for topping up balance to pay for Stays)
+    """
+    headers = get_stays_headers()
+    payload = {
+        "data": {
+
+            "amount": str(amount),
+            "currency": currency,
+        }
+    }
+    res = requests.post(f"{DUFFEL_PAYMENTS_URL}/payment_intents", headers=headers, json=payload)
+    if res.status_code >= 400:
+        try:
+            msg = res.json()["errors"][0]["message"]
+        except Exception:
+            msg = res.text
+        return None, msg
+    
+    data = res.json().get("data", {})
+    return {
+        "id": data.get("id"),
+        "client_token": data.get("client_token"),
+    }, None
+
+
+def get_payment_intent(intent_id):
+    """Get a Duffel Payment Intent details."""
+    headers = get_stays_headers()
+    res = requests.get(f"{DUFFEL_PAYMENTS_URL}/payment_intents/{intent_id}", headers=headers)
+    if res.status_code >= 400:
+        try:
+            msg = res.json()["errors"][0]["message"]
+        except Exception:
+            msg = res.text
+        return None, msg
+    
+    return res.json().get("data", {}), None

@@ -136,3 +136,25 @@ class StayRatesQuerySerializer(serializers.Serializer):
     search_result_id = serializers.CharField(
         help_text="The 'id' field from a stay search result (e.g. 'srr_0000B5IfJxvta3TIDZa0Ev')"
     )
+
+
+class StayBookingGuestSerializer(serializers.Serializer):
+    given_name = serializers.CharField(help_text="Guest first name")
+    family_name = serializers.CharField(help_text="Guest last name")
+    email = serializers.EmailField(help_text="Guest email address")
+
+
+class StayHoldSerializer(serializers.Serializer):
+    rate_id = serializers.CharField(
+        help_text="The 'id' field of a specific rate from the rates endpoint"
+    )
+    guests = StayBookingGuestSerializer(many=True, help_text="List of guests for the booking")
+    phone_number = serializers.CharField(
+        help_text="Lead passenger phone number in E.164 format (e.g. +88019...)"
+    )
+    email = serializers.EmailField(
+        help_text="Lead passenger email"
+    )
+    whatsapp_number = serializers.CharField(
+        help_text="WhatsApp number to send the payment link and confirmation to"
+    )

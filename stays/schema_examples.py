@@ -68,6 +68,34 @@ STAY_SEARCH_EXAMPLE_RESPONSE = """
 ```
 """
 
+STAY_HOLD_EXAMPLE_REQUEST = """
+```json
+{
+  "rate_id": "rat_0000AJyeTUCEoY5PhVPN8k_0",
+  "guests": [
+    {
+      "given_name": "Arif",
+      "family_name": "Hassan",
+      "email": "arif@example.com"
+    }
+  ],
+  "phone_number": "+8801912345678",
+  "email": "arif@example.com",
+  "whatsapp_number": "+8801912345678"
+}
+```
+"""
+
+STAY_HOLD_EXAMPLE_RESPONSE = """
+```json
+{
+  "checkout_url": "https://max-g.example.com/api/v1/stays/checkout/pi_123abc/",
+  "quote_id": "quo_0000AabcXYZ123",
+  "amount": "150.00",
+  "currency": "USD"
+}
+```
+"""
 STAY_RATES_EXAMPLE_RESPONSE = """
 ```json
 {
