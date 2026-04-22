@@ -1,4 +1,5 @@
 from django.urls import path, include
+from api.views import DuffelUnifiedWebhookView
 
 urlpatterns = [
     path("whatsapp/", include("whatsapp.urls")),
@@ -6,4 +7,5 @@ urlpatterns = [
     path("travel/", include("travel.urls")),
     path("stays/", include("stays.urls")),
     path("meeting-schedule/", include("meeting.urls")),
+    path("duffel-webhook/", DuffelUnifiedWebhookView.as_view(), name="duffel-webhook"),
 ]

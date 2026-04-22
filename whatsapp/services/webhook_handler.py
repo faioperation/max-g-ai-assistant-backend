@@ -1,4 +1,5 @@
 import logging
+import threading
 from whatsapp.services.meta_api import MetaAPI
 from whatsapp.services.bot_api import BotAPI
 from whatsapp.services.google_drive import GoogleDriveService
@@ -67,16 +68,17 @@ class WebhookHandler:
                     path = reverse("media-proxy", args=[media_id])
                     proxy_url = request.build_absolute_uri(path)
 
-                # TRIGGER GOOGLE DRIVE SYNC
-                # This runs synchronously in the webhook for now.
-                # In production, consider adding a task queue (like Celery)
-                self.drive_service.sync_whatsapp_media(
-                    contact_name=profile_name,
-                    phone_number=from_number,
-                    media_id=media_id,
-                    mime_type=mime_type,
-                    body_caption=body
-                )
+                # TRIGGER GOOGLE DRIVE SYNC in background
+                threading.Thread(
+                    target=self.drive_service.sync_whatsapp_media,
+                    kwargs={
+                        "contact_name": profile_name,
+                        "phone_number": from_number,
+                        "media_id": media_id,
+                        "mime_type": mime_type,
+                        "body_caption": body
+                    }
+                ).start()
 
             if not body:
                 body = f"[{msg_type.capitalize()} uploaded]"
@@ -93,13 +95,16 @@ class WebhookHandler:
                 status="delivered",
             )
 
-            self.bot_api.forward_to_bot(
-                sender_number=from_number,
-                message_text=body,
-                sender_name=profile_name,
-                message_type=msg_type,
-                media_url=proxy_url,
-            )
+            threading.Thread(
+                target=self.bot_api.forward_to_bot,
+                kwargs={
+                    "sender_number": from_number,
+                    "message_text": body,
+                    "sender_name": profile_name,
+                    "message_type": msg_type,
+                    "media_url": proxy_url,
+                }
+            ).start()
 
     def _handle_statuses(self, value):
         statuses = value.get("statuses", [])
