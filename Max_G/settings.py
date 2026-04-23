@@ -147,6 +147,7 @@ BOT_X_API_KEY = config("BOT_X_API_KEY", default="")
 
 # Travel Settings
 DUFFEL_ACCESS_TOKEN = config("DUFFEL_ACCESS_TOKEN", default="")
+DUFFEL_WEBHOOK_SECRET = config("DUFFEL_WEBHOOK_SECRET", default="")
 GOOGLE_CALENDAR_CREDENTIALS_PATH = config(
     "GOOGLE_CALENDAR_CREDENTIALS_PATH", default=""
 )
