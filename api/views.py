@@ -101,28 +101,28 @@ class DuffelUnifiedWebhookView(APIView):
             # 1. Check Flight Bookings first
             try:
                 from travel.models import PendingBooking
-                from travel.views import PaymentSuccessAPIView
+                from travel.services.duffel import book_flight, pay_held_order, get_order_details
                 booking = PendingBooking.objects.filter(
                     payment_intent_id=intent_id, status="pending"
                 ).first()
                 if booking:
-                    logger.info(f"Flight payment {intent_id} detected via webhook. Triggering confirmation.")
-                    return self._trigger_success(PaymentSuccessAPIView, intent_id)
-            except ImportError:
-                pass
+                    logger.info(f"Flight payment {intent_id} detected via webhook. Triggering booking.")
+                    return self._confirm_flight_booking(booking, intent_id)
+            except Exception as e:
+                logger.error(f"Webhook flight booking error: {e}")
 
             # 2. Check Stay Bookings
             try:
                 from stays.models import PendingStayBooking
-                from stays.views import StayPaymentSuccessAPIView
+                from stays.services.duffel_stays import book_stay
                 stay_booking = PendingStayBooking.objects.filter(
                     payment_intent_id=intent_id, status="pending"
                 ).first()
                 if stay_booking:
-                    logger.info(f"Stay payment {intent_id} detected via webhook. Triggering confirmation.")
-                    return self._trigger_success(StayPaymentSuccessAPIView, intent_id)
-            except ImportError:
-                pass
+                    logger.info(f"Stay payment {intent_id} detected via webhook. Triggering booking.")
+                    return self._confirm_stay_booking(stay_booking)
+            except Exception as e:
+                logger.error(f"Webhook stay booking error: {e}")
 
             return Response({"status": "ignored — no pending booking matched"}, status=status.HTTP_200_OK)
 
@@ -132,6 +132,80 @@ class DuffelUnifiedWebhookView(APIView):
             return self._handle_stay_booking_confirmed(duffel_booking_id)
 
         return Response({"status": "received"}, status=status.HTTP_200_OK)
+
+    def _confirm_flight_booking(self, booking, intent_id):
+        """
+        Book the flight atomically using the Payment Intent ID.
+        If it's a held order, pay via Duffel balance instead.
+        """
+        from travel.services.duffel import book_flight, pay_held_order, get_order_details
+
+        try:
+            if booking.duffel_order_id:
+                # Held order — pay via balance
+                raw_booking, pay_err = pay_held_order(
+                    booking.duffel_order_id,
+                    booking.raw_booking_data.get("amount"),
+                    booking.raw_booking_data.get("currency"),
+                )
+            else:
+                # Instant order — book using balance
+                raw = booking.raw_booking_data or {}
+                raw_booking, pay_err = book_flight(
+                    offer_id=raw["offer_id"],
+                    passengers_input=raw["passengers"],
+                    payment_type="balance",
+                    order_type="instant"
+                )
+                if not pay_err:
+                    booking.duffel_order_id = raw_booking["order_id"]
+
+            if pay_err:
+                booking.status = "failed"
+                booking.save()
+                logger.error(f"Webhook flight booking failed for intent {intent_id}: {pay_err}")
+                return Response({"status": "booking_failed", "error": str(pay_err)}, status=status.HTTP_200_OK)
+
+            booking.status = "paid"
+            booking.save()
+            logger.info(f"Webhook: Flight booking confirmed. Order: {booking.duffel_order_id}")
+
+            # Send WhatsApp notification
+            self._notify_flight_success(booking)
+
+        except Exception as e:
+            logger.error(f"Webhook _confirm_flight_booking exception: {e}")
+
+        return Response({"status": "flight booking confirmed"}, status=status.HTTP_200_OK)
+
+    def _confirm_stay_booking(self, stay_booking):
+        """Confirm a pending stay booking after payment succeeds via webhook."""
+        from stays.services.duffel_stays import book_stay
+
+        try:
+            raw_data = stay_booking.raw_booking_data
+            booking_res, booking_err = book_stay(
+                quote_id=stay_booking.quote_id,
+                guests=raw_data["guests"],
+                phone_number=raw_data["phone_number"],
+                email=raw_data["email"],
+            )
+
+            if booking_err:
+                stay_booking.status = "failed"
+                stay_booking.save()
+                logger.error(f"Webhook stay booking failed: {booking_err}")
+                return Response({"status": "stay_booking_failed"}, status=status.HTTP_200_OK)
+
+            stay_booking.status = "paid"
+            stay_booking.duffel_booking_id = booking_res.get("id")
+            stay_booking.save()
+            logger.info(f"Webhook: Stay booking confirmed. ID: {stay_booking.duffel_booking_id}")
+
+        except Exception as e:
+            logger.error(f"Webhook _confirm_stay_booking exception: {e}")
+
+        return Response({"status": "stay booking confirmed"}, status=status.HTTP_200_OK)
 
     def _handle_stay_booking_confirmed(self, duffel_booking_id):
         """Handle stays.booking.created event — mark the pending stay booking as paid."""
@@ -149,10 +223,31 @@ class DuffelUnifiedWebhookView(APIView):
             logger.error(f"Error handling stays.booking.created: {e}")
         return Response({"status": "ignored stay event"}, status=status.HTTP_200_OK)
 
-    def _trigger_success(self, view_class, intent_id):
-        """Reuse the existing PaymentSuccessAPIView logic for webhook-triggered confirmations."""
-        from django.test import RequestFactory
-        factory = RequestFactory()
-        sim_request = factory.post('/api/dummy/', {'intent_id': intent_id}, content_type='application/json')
-        view = view_class.as_view()
-        return view(sim_request)
+    def _notify_flight_success(self, booking):
+        """Send WhatsApp notification after successful flight booking."""
+        try:
+            from travel.services.duffel import get_order_details
+            from whatsapp.services.meta_api import MetaAPI
+            from django.conf import settings
+
+            order_data, _ = get_order_details(booking.duffel_order_id)
+            pdf_url = None
+            if order_data and "documents" in order_data:
+                for doc in order_data["documents"]:
+                    if doc.get("type") == "electronic_ticket":
+                        pdf_url = doc.get("pdf_url")
+                        break
+
+            dashboard_url = f"https://app.duffel.com/25aa8ec5a53032c948afa12/test/orders/{booking.duffel_order_id}"
+            meta_api = MetaAPI()
+
+            user_msg = f"🎉 Your payment was successful! Flight order #{booking.duffel_order_id} is confirmed."
+            user_msg += f"\n\n{'📥 Download ticket: ' + pdf_url if pdf_url else '📄 View booking: ' + dashboard_url}"
+            meta_api.send_text_message(booking.whatsapp_number, user_msg)
+
+            admin_number = getattr(settings, "WHATSAPP_ADMIN_NUMBER", None)
+            if admin_number:
+                admin_msg = f"🔔 *Flight Payment*\n\nUser: {booking.whatsapp_number}\nOrder: {booking.duffel_order_id}\nTicket: {pdf_url or dashboard_url}"
+                meta_api.send_text_message(admin_number, admin_msg)
+        except Exception as e:
+            logger.error(f"Webhook WhatsApp notify failed: {e}")

@@ -150,11 +150,10 @@ class FlightHoldView(APIView):
 
             import json
 
-            raw_data = None
-            if is_deferred:
-                raw_data = json.loads(
-                    json.dumps(serializer.validated_data, default=str)
-                )
+            # Always save offer_id + passengers so we can book on payment success
+            raw_data = json.loads(
+                json.dumps(serializer.validated_data, default=str)
+            )
 
             PendingBooking.objects.create(
                 duffel_order_id=order_id,
@@ -251,15 +250,18 @@ class PaymentSuccessAPIView(APIView):
             )
 
         if booking.duffel_order_id:
+            # Held order — pay via balance
             pay_result, pay_err = pay_held_order(
                 booking.duffel_order_id, intent_data["amount"], intent_data["currency"]
             )
         else:
+            # Deferred/instant order — book using balance
+            raw = booking.raw_booking_data or {}
             pay_result, pay_err = book_flight(
-                offer_id=booking.raw_booking_data["offer_id"],
-                passengers_input=booking.raw_booking_data["passengers"],
+                offer_id=raw["offer_id"],
+                passengers_input=raw["passengers"],
                 payment_type="balance",
-                order_type="instant",
+                order_type="instant"
             )
             if not pay_err:
                 booking.duffel_order_id = pay_result["order_id"]

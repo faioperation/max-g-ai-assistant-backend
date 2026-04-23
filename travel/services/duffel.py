@@ -183,9 +183,12 @@ def get_offer(offer_id):
     return res.json()["data"], None
 
 
-def book_flight(offer_id, passengers_input, payment_type="balance", order_type="instant"):
+def book_flight(offer_id, passengers_input, payment_type="balance", order_type="instant", payment_intent_id=None):
     """
     Book a flight offer.
+    - payment_type="balance"         → charges Duffel account balance (for held orders)
+    - payment_type="payment_intent"  → charges card via a Duffel Payment Intent (atomic: charge + ticket in one step)
+    - payment_intent_id              → required when payment_type="payment_intent"
     Returns (booking_result_dict, error_dict_or_None).
     """
     headers = get_headers()
@@ -257,7 +260,7 @@ def book_flight(offer_id, passengers_input, payment_type="balance", order_type="
             "passengers": duffel_passengers,
         }
     }
-    
+
     if order_type == "instant":
         payload["data"]["payments"] = [
             {
