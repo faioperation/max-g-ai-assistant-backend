@@ -12,8 +12,10 @@ from whatsapp.models import WhatsAppContact, WhatsAppMessage
 from whatsapp.serializers import (
     ReplyDirectSerializer,
     ReplyMaxSerializer,
+    ReplyResultsSerializer,
     ReplyResponseSerializer,
 )
+from whatsapp.services.formatter import ResultsFormatter
 
 import logging
 import requests
@@ -229,6 +231,69 @@ class ReplyMaxView(APIView):
             )
 
         return Response(meta_response, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class ReplyResultsView(APIView):
+    permission_classes = []
+    parser_classes = BOT_PARSERS
+
+    @swagger_auto_schema(
+        operation_summary="Send formatted search results to user",
+        operation_description=(
+            "Takes a JSON list of flight offers or hotel search results, formats them as text, "
+            "and sends them to the WhatsApp user. "
+            "Large lists are automatically split into multiple messages based on `chunk_size`.\n\n"
+            "### Example Request\n"
+            "```json\n"
+            "{\n"
+            '  "to": "8801641697469",\n'
+            '  "result_type": "flights",\n'
+            '  "data": [... JSON from search ...],\n'
+            '  "chunk_size": 5\n'
+            "}\n"
+            "```"
+        ),
+        tags=["WhatsApp Reply"],
+        request_body=ReplyResultsSerializer,
+        responses={
+            200: openapi.Response("Results sent successfully"),
+            400: openapi.Response("Validation error"),
+        },
+    )
+    def post(self, request):
+        serializer = ReplyResultsSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        to = serializer.validated_data["to"]
+        result_type = serializer.validated_data["result_type"]
+        data = serializer.validated_data["data"]
+        chunk_size = serializer.validated_data["chunk_size"]
+
+        if result_type == "flights":
+            chunks = ResultsFormatter.format_flights(data, chunk_size=chunk_size)
+        else:
+            chunks = ResultsFormatter.format_hotels(data, chunk_size=chunk_size)
+
+        meta_api = MetaAPI()
+        wa_ids = []
+        for text in chunks:
+            res = meta_api.send_text_message(to, text)
+            if "messages" in res:
+                wa_id = res["messages"][0].get("id")
+                wa_ids.append(wa_id)
+                # Save outgoing message
+                _save_outgoing(to, {"message_type": "text", "body": text}, wa_id)
+
+        return Response(
+            {
+                "status": "success",
+                "messages_sent": len(chunks),
+                "wa_message_ids": wa_ids,
+                "to": to,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 # ─── Media Proxy ──────────────────────────────────────────────────────────────

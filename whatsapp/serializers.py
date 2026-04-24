@@ -86,6 +86,26 @@ class ReplyMaxSerializer(serializers.Serializer):
     )
 
 
+class ReplyResultsSerializer(serializers.Serializer):
+    to = serializers.CharField(
+        max_length=20,
+        help_text="Recipient WhatsApp number in E.164 format",
+    )
+    result_type = serializers.ChoiceField(
+        choices=["flights", "hotels"],
+        help_text="Type of results being sent (affects formatting)",
+    )
+    data = serializers.JSONField(
+        help_text="The JSON list of flight offers or hotel search results"
+    )
+    chunk_size = serializers.IntegerField(
+        default=5,
+        min_value=1,
+        max_value=10,
+        help_text="Number of results per WhatsApp message",
+    )
+
+
 class ReplyResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     wa_message_id = serializers.CharField(allow_null=True)
