@@ -22,7 +22,7 @@ class CalendarService(GoogleAuthBase):
         end_time=None,
         description=None,
         location=None,
-        attendee_email=None,
+        attendee_emails=None,
     ):
         if not self.creds:
             return {"error": "Google Calendar authentication failed"}
@@ -38,11 +38,11 @@ class CalendarService(GoogleAuthBase):
                 "description": description,
                 "start": {
                     "dateTime": start_time.isoformat(),
-                    "timeZone": "UTC",
+                    "timeZone": "Asia/Dubai",
                 },
                 "end": {
                     "dateTime": end_time.isoformat(),
-                    "timeZone": "UTC",
+                    "timeZone": "Asia/Dubai",
                 },
                 "conferenceData": {
                     "createRequest": {
@@ -52,8 +52,8 @@ class CalendarService(GoogleAuthBase):
                 },
             }
 
-            if attendee_email:
-                event["attendees"] = [{"email": attendee_email}]
+            if attendee_emails:
+                event["attendees"] = [{"email": email.strip()} for email in attendee_emails if email.strip()]
 
             event = (
                 service.events()
@@ -61,7 +61,7 @@ class CalendarService(GoogleAuthBase):
                     calendarId=self.calendar_id,
                     body=event,
                     conferenceDataVersion=1,
-                    sendUpdates="all" if attendee_email else "none",
+                    sendUpdates="all" if attendee_emails else "none",
                 )
                 .execute()
             )
@@ -84,7 +84,7 @@ class CalendarService(GoogleAuthBase):
             logger.error(f"An error occurred: {error}")
             return {"error": str(error)}
 
-    def parse_and_schedule(self, text, attendee_email=None):
+    def parse_and_schedule(self, text, attendee_emails=None):
         try:
             dt = parse_date(text, fuzzy=True)
             if dt < datetime.datetime.now():
@@ -94,7 +94,7 @@ class CalendarService(GoogleAuthBase):
             description = f"Original request: {text}"
 
             return self.create_event(
-                summary, dt, description=description, attendee_email=attendee_email
+                summary, dt, description=description, attendee_emails=attendee_emails
             )
         except Exception as e:
             logger.error(f"Error parsing date from text: {str(e)}")

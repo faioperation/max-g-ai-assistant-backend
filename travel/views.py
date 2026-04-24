@@ -151,9 +151,7 @@ class FlightHoldView(APIView):
             import json
 
             # Always save offer_id + passengers so we can book on payment success
-            raw_data = json.loads(
-                json.dumps(serializer.validated_data, default=str)
-            )
+            raw_data = json.loads(json.dumps(serializer.validated_data, default=str))
 
             PendingBooking.objects.create(
                 duffel_order_id=order_id,
@@ -261,7 +259,7 @@ class PaymentSuccessAPIView(APIView):
                 offer_id=raw["offer_id"],
                 passengers_input=raw["passengers"],
                 payment_type="balance",
-                order_type="instant"
+                order_type="instant",
             )
             if not pay_err:
                 booking.duffel_order_id = pay_result["order_id"]
