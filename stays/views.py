@@ -6,12 +6,12 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from stays.serializers import StaySearchSerializer, StayHoldSerializer
-from stays.schema_examples import (
-    STAY_SEARCH_EXAMPLE_REQUEST,
-    STAY_SEARCH_EXAMPLE_RESPONSE,
-    STAY_RATES_EXAMPLE_RESPONSE,
-    STAY_HOLD_EXAMPLE_REQUEST,
-    STAY_HOLD_EXAMPLE_RESPONSE,
+from stays.schemas import (
+    STAY_SEARCH_SCHEMA,
+    STAY_RATES_SCHEMA,
+    STAY_HOLD_SCHEMA,
+    STAY_PAYMENT_CHECKOUT_SCHEMA,
+    STAY_PAYMENT_SUCCESS_SCHEMA,
 )
 from stays.services.duffel_stays import (
     geocode_location,
@@ -32,27 +32,7 @@ logger = logging.getLogger(__name__)
 
 class StaySearchView(APIView):
 
-    @swagger_auto_schema(
-        operation_summary="Search hotels by location",
-        operation_description=(
-            "Search for available hotels/stays using a location name, dates, guest count and rooms.\n\n"
-            "The system automatically converts `location_name` to coordinates via OpenStreetMap.\n\n"
-            "Use the returned `id` (search result ID) to fetch full room rates via `/stays/rates/`.\n\n"
-            "### Example Request\n"
-            + STAY_SEARCH_EXAMPLE_REQUEST
-            + "\n### Example Response\n"
-            + STAY_SEARCH_EXAMPLE_RESPONSE
-        ),
-        tags=["Stays"],
-        request_body=StaySearchSerializer,
-        responses={
-            200: openapi.Response(
-                "List of matched hotel properties with cheapest rate"
-            ),
-            400: openapi.Response("Validation error or location not found"),
-            503: openapi.Response("Duffel API not configured"),
-        },
-    )
+    @swagger_auto_schema(**STAY_SEARCH_SCHEMA)
     def post(self, request):
         serializer = StaySearchSerializer(data=request.data)
         if not serializer.is_valid():
@@ -84,29 +64,7 @@ class StaySearchView(APIView):
 
 class StayRatesView(APIView):
 
-    @swagger_auto_schema(
-        operation_summary="Get room rates for a property",
-        operation_description=(
-            "Fetch all available room types and rates for a specific property.\n\n"
-            "Get the `search_result_id` from the `id` field in a `/stays/search/` response.\n\n"
-            "Results expire after `expires_at` — re-search if expired.\n\n"
-            "### Example Response\n" + STAY_RATES_EXAMPLE_RESPONSE
-        ),
-        tags=["Stays"],
-        manual_parameters=[
-            openapi.Parameter(
-                name="search_result_id",
-                in_=openapi.IN_QUERY,
-                type=openapi.TYPE_STRING,
-                required=True,
-                description="The `id` from a stay search result (e.g. srr_0000B5IfJxvta3TIDZa0Ev)",
-            )
-        ],
-        responses={
-            200: openapi.Response("Room rates and options for the property"),
-            400: openapi.Response("Missing or invalid search_result_id"),
-        },
-    )
+    @swagger_auto_schema(**STAY_RATES_SCHEMA)
     def post(self, request):
         search_result_id = request.data.get(
             "search_result_id"
@@ -129,44 +87,7 @@ class StayRatesView(APIView):
 class StayHoldView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(
-        operation_summary="Hold a stay and create payment intent",
-        operation_description=(
-            "Reserve a hotel room using a Duffel `rate_id` and generate a Payment Intent for checkout.\n\n"
-            "Returns a `checkout_url` which should be sent to the user on WhatsApp.\n\n"
-            "### Example Request\n"
-            + STAY_HOLD_EXAMPLE_REQUEST
-            + "\n### Example Response\n"
-            + STAY_HOLD_EXAMPLE_RESPONSE
-        ),
-        tags=["Stays"],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "rate_id": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Rate ID"
-                ),
-                "guests": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            "given_name": openapi.Schema(type=openapi.TYPE_STRING),
-                            "family_name": openapi.Schema(type=openapi.TYPE_STRING),
-                            "email": openapi.Schema(type=openapi.TYPE_STRING),
-                        },
-                    ),
-                ),
-                "phone_number": openapi.Schema(type=openapi.TYPE_STRING),
-                "email": openapi.Schema(type=openapi.TYPE_STRING),
-                "whatsapp_number": openapi.Schema(type=openapi.TYPE_STRING),
-            },
-        ),
-        responses={
-            200: openapi.Response("Payment checkout link generated"),
-            400: openapi.Response("Validation or Duffel API error"),
-        },
-    )
+    @swagger_auto_schema(**STAY_HOLD_SCHEMA)
     def post(self, request):
         serializer = StayHoldSerializer(data=request.data)
         if not serializer.is_valid():
@@ -228,12 +149,7 @@ class StayHoldView(APIView):
 class StayPaymentCheckoutView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(
-        operation_summary="Render secure checkout page",
-        operation_description="Serves the HTML checkout page for Duffel Payments.",
-        tags=["Stays Payments"],
-        responses={200: "HTML page"},
-    )
+    @swagger_auto_schema(**STAY_PAYMENT_CHECKOUT_SCHEMA)
     def get(self, request, intent_id):
         try:
             booking = PendingStayBooking.objects.get(payment_intent_id=intent_id)
@@ -271,20 +187,7 @@ class StayPaymentCheckoutView(APIView):
 class StayPaymentSuccessAPIView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(
-        operation_summary="Handle successful Duffel payment",
-        operation_description="Called by the frontend when Duffel payment succeeds. Confirms the stay booking.",
-        tags=["Stays Payments"],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "intent_id": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Payment Intent ID"
-                )
-            },
-        ),
-        responses={200: "Booking ID and success"},
-    )
+    @swagger_auto_schema(**STAY_PAYMENT_SUCCESS_SCHEMA)
     def post(self, request):
         intent_id = request.data.get("intent_id")
         if not intent_id:

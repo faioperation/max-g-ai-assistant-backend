@@ -30,12 +30,6 @@ class WhatsAppContactSerializer(serializers.ModelSerializer):
         return None
 
 
-class PendingBookingSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PendingBooking
-        fields = "__all__"
-
-
 class ReplyDirectSerializer(serializers.Serializer):
     to = serializers.CharField(
         max_length=20,
@@ -92,17 +86,11 @@ class ReplyResultsSerializer(serializers.Serializer):
         help_text="Recipient WhatsApp number in E.164 format",
     )
     result_type = serializers.ChoiceField(
-        choices=["flights", "hotels"],
+        choices=["flights", "hotels", "hotel_rates"],
         help_text="Type of results being sent (affects formatting)",
     )
     data = serializers.JSONField(
         help_text="The JSON list of flight offers or hotel search results"
-    )
-    chunk_size = serializers.IntegerField(
-        default=5,
-        min_value=1,
-        max_value=10,
-        help_text="Number of results per WhatsApp message",
     )
 
 

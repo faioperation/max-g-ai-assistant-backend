@@ -6,9 +6,8 @@ from rest_framework.response import Response
 from django.shortcuts import render
 from rest_framework.views import APIView
 from travel.models import PendingBooking
-from travel.schema_examples import *
+from travel.schemas import *
 from travel.serializers import (
-    FlightBookSerializer,
     FlightSearchSerializer,
     FlightHoldSerializer,
 )
@@ -29,25 +28,7 @@ logger = logging.getLogger(__name__)
 class FlightSearchView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(
-        operation_summary="Search for available flights",
-        operation_description=(
-            "Search for available flight offers via Duffel API. "
-            "Returns a deduplicated list of offers formatted for display.\n\n"
-            "Use the returned `offer_id` to call `/flights/book/` or `/flights/hold/`.\n\n"
-            "### Example Request\n"
-            + SEARCH_EXAMPLE_REQUEST
-            + "\n### Example Response\n"
-            + SEARCH_EXAMPLE_RESPONSE
-        ),
-        tags=["Travel — Flights"],
-        request_body=FlightSearchSerializer,
-        responses={
-            200: openapi.Response("List of available offers"),
-            400: openapi.Response("Validation or Duffel error"),
-            503: openapi.Response("Duffel API not configured"),
-        },
-    )
+    @swagger_auto_schema(**FLIGHT_SEARCH_SCHEMA)
     def post(self, request):
         serializer = FlightSearchSerializer(data=request.data)
         if not serializer.is_valid():
@@ -76,24 +57,7 @@ class FlightSearchView(APIView):
 class FlightHoldView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(
-        operation_summary="Hold a flight and create payment intent",
-        operation_description=(
-            "Reserve a flight using a Duffel `offer_id` and generate a Payment Intent for checkout.\n\n"
-            "Returns a `checkout_url` which should be sent to the user on WhatsApp.\n\n"
-            "### Example Request\n"
-            + HOLD_EXAMPLE_REQUEST
-            + "\n### Example Response\n"
-            + HOLD_EXAMPLE_RESPONSE
-        ),
-        tags=["Travel — Flights"],
-        request_body=FlightHoldSerializer,
-        responses={
-            200: openapi.Response("Payment checkout link generated"),
-            400: openapi.Response("Validation or Duffel API error"),
-            503: openapi.Response("Duffel API not configured"),
-        },
-    )
+    @swagger_auto_schema(**FLIGHT_HOLD_SCHEMA)
     def post(self, request):
         serializer = FlightHoldSerializer(data=request.data)
         if not serializer.is_valid():

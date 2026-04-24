@@ -114,10 +114,52 @@ HOLD_EXAMPLE_REQUEST = """
 HOLD_EXAMPLE_RESPONSE = """
 ```json
 {
-  "checkout_url": "http://your-domain.com/api/v1/travel/checkout/pi_123456/",
-  "order_id": "ord_0000B4mX98d...",
+  "checkout_url": "https://max-g.example.com/api/v1/flights/checkout/pi_123abc/",
+  "quote_id": "quo_0000B4jZ94q...",
   "amount": "798.10",
   "currency": "USD"
 }
 ```
 """
+
+from drf_yasg import openapi
+from travel.serializers import FlightSearchSerializer, FlightHoldSerializer
+
+FLIGHT_SEARCH_SCHEMA = {
+    "operation_summary": "Search for available flights",
+    "operation_description": (
+        "Search for available flight offers via Duffel API. "
+        "Returns a deduplicated list of offers formatted for display.\n\n"
+        "Use the returned `offer_id` to call `/flights/book/` or `/flights/hold/`.\n\n"
+        "### Example Request\n"
+        + SEARCH_EXAMPLE_REQUEST
+        + "\n### Example Response\n"
+        + SEARCH_EXAMPLE_RESPONSE
+    ),
+    "tags": ["Travel — Flights"],
+    "request_body": FlightSearchSerializer,
+    "responses": {
+        200: openapi.Response("List of available offers"),
+        400: openapi.Response("Validation or Duffel error"),
+        503: openapi.Response("Duffel API not configured"),
+    },
+}
+
+FLIGHT_HOLD_SCHEMA = {
+    "operation_summary": "Hold a flight and create payment intent",
+    "operation_description": (
+        "Reserve a flight using a Duffel `offer_id` and generate a Payment Intent for checkout.\n\n"
+        "Returns a `checkout_url` which should be sent to the user on WhatsApp.\n\n"
+        "### Example Request\n"
+        + HOLD_EXAMPLE_REQUEST
+        + "\n### Example Response\n"
+        + HOLD_EXAMPLE_RESPONSE
+    ),
+    "tags": ["Travel — Flights"],
+    "request_body": FlightHoldSerializer,
+    "responses": {
+        200: openapi.Response("Payment checkout link generated"),
+        400: openapi.Response("Validation or Duffel API error"),
+        503: openapi.Response("Duffel API not configured"),
+    },
+}

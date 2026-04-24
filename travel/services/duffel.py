@@ -112,7 +112,7 @@ def search_flights(slices_data, passengers_data, max_results=50):
         dep_date = s.get("departure_date")
         if isinstance(dep_date, datetime.date):
             dep_date = dep_date.isoformat()
-            
+
         slices_payload.append(
             {
                 "origin": s.get("origin"),
@@ -183,7 +183,13 @@ def get_offer(offer_id):
     return res.json()["data"], None
 
 
-def book_flight(offer_id, passengers_input, payment_type="balance", order_type="instant", payment_intent_id=None):
+def book_flight(
+    offer_id,
+    passengers_input,
+    payment_type="balance",
+    order_type="instant",
+    payment_intent_id=None,
+):
     """
     Book a flight offer.
     - payment_type="balance"         → charges Duffel account balance (for held orders)
@@ -207,7 +213,10 @@ def book_flight(offer_id, passengers_input, payment_type="balance", order_type="
     # Validate order strategy
     strategies = offer_data.get("supported_order_strategies", ["instant"])
     if order_type not in strategies:
-        return None, f"Order strategy '{order_type}' is not supported by this carrier. This flight must be booked via: {', '.join(strategies)}"
+        return (
+            None,
+            f"Order strategy '{order_type}' is not supported by this carrier. This flight must be booked via: {', '.join(strategies)}",
+        )
 
     # 2. Build clean passenger dicts for Duffel
     duffel_passengers = []
@@ -219,10 +228,12 @@ def book_flight(offer_id, passengers_input, payment_type="balance", order_type="
             born_on = born_on.isoformat()
 
         import re
+
         def clean_name(name):
-            if not name: return ""
+            if not name:
+                return ""
             # Keep only letters and spaces
-            return re.sub(r'[^a-zA-Z\s]', '', name).strip()
+            return re.sub(r"[^a-zA-Z\s]", "", name).strip()
 
         pax = {
             "id": p.get("id") or offer_pax.get("id"),
@@ -305,11 +316,13 @@ def create_payment_intent(amount, currency):
             "currency": currency,
         }
     }
-    res = requests.post(f"{DUFFEL_PAYMENTS_URL}/payment_intents", headers=headers, json=payload)
+    res = requests.post(
+        f"{DUFFEL_PAYMENTS_URL}/payment_intents", headers=headers, json=payload
+    )
     if res.status_code >= 400:
         msg, req_id = _duffel_error(res)
         return None, msg
-    
+
     data = res.json().get("data", {})
     return {
         "id": data.get("id"),
@@ -320,11 +333,13 @@ def create_payment_intent(amount, currency):
 def get_payment_intent(intent_id):
     """Get a Duffel Payment Intent."""
     headers = get_headers()
-    res = requests.get(f"{DUFFEL_PAYMENTS_URL}/payment_intents/{intent_id}", headers=headers)
+    res = requests.get(
+        f"{DUFFEL_PAYMENTS_URL}/payment_intents/{intent_id}", headers=headers
+    )
     if res.status_code >= 400:
         msg, req_id = _duffel_error(res)
         return None, msg
-    
+
     data = res.json().get("data", {})
     return data, None
 
@@ -341,11 +356,13 @@ def pay_held_order(order_id, amount, currency, payment_type="balance"):
             }
         }
     }
-    res = requests.post(f"{DUFFEL_AIR_URL}/orders/{order_id}/actions/pay", headers=headers, json=payload)
+    res = requests.post(
+        f"{DUFFEL_AIR_URL}/orders/{order_id}/actions/pay", headers=headers, json=payload
+    )
     if res.status_code >= 400:
         msg, req_id = _duffel_error(res)
         return None, msg
-    
+
     data = res.json().get("data", {})
     return data, None
 
