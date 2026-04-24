@@ -86,8 +86,13 @@ class CalendarService(GoogleAuthBase):
 
     def parse_and_schedule(self, text, attendee_emails=None):
         try:
+            from django.utils import timezone
             dt = parse_date(text, fuzzy=True)
-            if dt < datetime.datetime.now():
+            # If naive, localize to the project's current timezone (Asia/Dubai)
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt)
+
+            if dt < timezone.now():
                 dt = dt + datetime.timedelta(days=1)
 
             summary = f"Meeting scheduled via Bot: {text[:50]}..."

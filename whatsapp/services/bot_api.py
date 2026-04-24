@@ -22,9 +22,8 @@ class BotAPI:
         if not self.bot_url or not self.api_key:
             return "Bot is not configured."
 
-        import datetime
-
-        timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        from django.utils import timezone
+        timestamp = timezone.now().strftime("%Y-%m-%dT%H:%M:%S%z")
 
         payload = {
             "sender_number": sender_number,
